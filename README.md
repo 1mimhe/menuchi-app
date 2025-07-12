@@ -9,18 +9,19 @@
 
 *Empowering restaurant owners to create interactive digital menus effortlessly*
 
+[![](https://img.shields.io/badge/Database%20Schema-8A2BE2)](https://dbdiagram.io/d/menuchi-db-67d2dbb575d75cc844f75bb6) [![Frontend Repository](https://img.shields.io/badge/Frontend%20Repository-blue)](https://github.com/asAlwaysZahra/menuchi-angular-frontend)
+
 [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)](https://typescriptlang.org/)
 [![Express.js](https://img.shields.io/badge/Express.js-404D59?style=for-the-badge&logo=express)](https://expressjs.com/)
 [![Node.js](https://img.shields.io/badge/Node.js-43853D?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white)](https://postgresql.org/)
 [![Prisma](https://img.shields.io/badge/Prisma-3982CE?style=for-the-badge&logo=Prisma&logoColor=white)](https://prisma.io/)
 [![Redis](https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white)](https://redis.io/)
+
 [![AWS S3](https://img.shields.io/badge/AWS%20S3-FF9900?style=for-the-badge&logo=amazon-s3&logoColor=white)](https://aws.amazon.com/s3/)
 [![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://docker.com/)
 [![Vitest](https://img.shields.io/badge/Vitest-6E9F18?style=for-the-badge&logo=vitest&logoColor=white)](https://vitest.dev/)
 [![TSOA](https://img.shields.io/badge/TSOA-FF6B6B?style=for-the-badge)](https://tsoa-community.github.io/docs/)
-
-[📚 API Documentation](http://localhost:3000/docs) • [🔗 Database Schema](https://dbdiagram.io/d/menuchi-db-67d2dbb575d75cc844f75bb6)
 
 </div>
 
@@ -94,15 +95,15 @@ MenuChi
 │   │   ├── swagger.json
 │   │   └── TransformersRedisClient.ts
 │   ├── controllers/          # API request handlers
-│   │   ├── 🔐 AuthController.ts
-│   │   ├── 📋 BacklogController.ts
-│   │   ├── 🏢 BranchController.ts
-│   │   ├── 📱 MenuController.ts
-│   │   ├── 📦 OrderController.ts
-│   │   └── 🏪 RestaurantController.ts
+│   │   ├── AuthController.ts
+│   │   ├── BacklogController.ts
+│   │   ├── BranchController.ts
+│   │   ├── MenuController.ts
+│   │   ├── OrderController.ts
+│   │   └── RestaurantController.ts
 │   ├── db/                  # Database configuration
-│   │   ├── 🔧 prisma.ts
-│   │   └── 📋 schema.prisma
+│   │   ├── prisma.ts
+│   │   └── schema.prisma
 │   ├── exceptions/          # Custom error classes
 │   ├── middlewares/         # Express middleware
 │   ├── services/            # Business logic
