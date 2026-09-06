@@ -1,7 +1,8 @@
-import { describe, expect, test } from "vitest";
+import { beforeAll, describe, expect, test, vi } from "vitest";
 import { CategoryNameController } from "../../src/controllers/CategoryNameController";
 import { RestaurantController } from "../../src/controllers/RestaurantController";
 import { BacklogController } from "../../src/controllers/BacklogController";
+import BaseController from "../../src/controllers/BaseController";
 import { returnCategoryName, returnCylinder, returnItem, returnMenu, returnRestaurant } from "../factories";
 import { MenuController } from "../../src/controllers/MenuController";
 import { CylinderValidationError } from "../../src/exceptions/ValidationError";
@@ -12,6 +13,13 @@ import MenuchiError from "../../src/exceptions/MenuchiError";
 import { MenuCompactIn } from "../../src/types/MenuTypes";
 import MenuService from "../../src/services/MenuService";
 import BacklogService from "../../src/services/BacklogService";
+
+beforeAll(() => {
+  // Phase-1 tech debt: direct controller calls bypass HTTP auth.
+  // Mock guard here; real enforcement is covered via HTTP in AuthZ.test.ts.
+  // TODO(Phase-3): convert these to Supertest and drop this mock.
+  vi.spyOn(BaseController.prototype, "checkPermission").mockImplementation(() => {});
+});
 
 const categoryNameController = new CategoryNameController();
 const restaurantController = new RestaurantController();
