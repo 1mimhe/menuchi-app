@@ -2,7 +2,7 @@ import MenuchiError from "./MenuchiError";
 
 export class AuthError extends MenuchiError {
   constructor(
-    message: string = 'Database error',
+    message: string = 'Auth error',
     status: number = 400
   ) {
     super(message, status);

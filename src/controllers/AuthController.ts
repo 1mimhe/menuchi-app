@@ -16,6 +16,7 @@ import express from 'express';
 import { CookieNames, RolesEnum } from '../types/Enums';
 import BaseController from "./BaseController";
 import { InvalidCredentialsError } from '../exceptions/AuthError';
+import MenuchiError from '../exceptions/MenuchiError';
 import OtpRedisClient from '../config/OtpRedisClient';
 
 @Route('/auth')
@@ -46,10 +47,14 @@ export class AuthController extends BaseController {
 
     const { accessToken, user } = await AuthService.signin(body);
 
-    this.setHeader(
-      'Set-Cookie',
-      `${CookieNames.AccessToken}=${accessToken}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${2 * 24 * 3600}`
-    );
+    const isProduction = process.env.NODE_ENV === 'production';
+    req.res?.cookie(CookieNames.AccessToken, accessToken, {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: 'lax',
+      maxAge: 2 * 24 * 3600 * 1000,
+      path: '/',
+    });
 
     req.session.accessToken = accessToken;
     req.session.user = user;
@@ -78,8 +83,23 @@ export class AuthController extends BaseController {
     @Body() body: CheckOtpIn,
     @Request() req: express.Request
   ): Promise<boolean> {
+    // Brute-force guard: max 5 attempts per email per 10 minutes.
+    const attemptsKey = `otp:attempts:${body.email}`;
+    const attempts = await OtpRedisClient.incr(attemptsKey);
+    if (attempts === 1) await OtpRedisClient.expire(attemptsKey, 600);
+    if (attempts > 5) {
+      throw new MenuchiError('Too many OTP attempts. Try again later.', 429);
+    }
+
     const otpService = `${process.env.INTERNAL_OTP_URL}${process.env.INTERNAL_OTP_ENDPOINT}/${body.email}`;
-    const { code: otpCode } = await (await fetch(otpService)).json();
+    let otpCode: unknown;
+    try {
+      const res = await fetch(otpService, { signal: AbortSignal.timeout(5000) });
+      if (!res.ok) throw new Error(`OTP service responded ${res.status}`);
+      ({ code: otpCode } = (await res.json()) as { code: unknown });
+    } catch {
+      throw new MenuchiError('OTP verification service unavailable.', 502);
+    }
  
     if (body.code === otpCode) {
       const payload = {
@@ -87,15 +107,20 @@ export class AuthController extends BaseController {
         roles: [RolesEnum.RestaurantCustomer]
       };
       const accessToken = AuthService.generateAuthToken(payload);
- 
-      this.setHeader(
-        'Set-Cookie',
-        `${CookieNames.AccessToken}=${accessToken}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${2 * 24 * 3600}`
-      );
- 
+
+      const isProduction = process.env.NODE_ENV === 'production';
+      req.res?.cookie(CookieNames.AccessToken, accessToken, {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: 'lax',
+        maxAge: 2 * 24 * 3600 * 1000,
+        path: '/',
+      });
+
       req.session.accessToken = accessToken;
       req.session.user = { id: body.email };
       req.session.lastAccessed = new Date();
+      await OtpRedisClient.del(attemptsKey);
     } else throw new InvalidCredentialsError();
  
     return true;
@@ -107,9 +132,17 @@ export class AuthController extends BaseController {
   @SuccessResponse(200, 'User logged out successfully.')
   @Post('/logout')
   public async logout(@Request() req: express.Request): Promise<boolean> {
-    req.session.destroy(() => {});
-    req.res?.clearCookie(CookieNames.AccessToken);
-    req.res?.clearCookie(CookieNames.SessionId);
+    await new Promise<void>((resolve, reject) => {
+      req.session.destroy((err?: unknown) => (err ? reject(err) : resolve()));
+    });
+    const cookieOptions = {
+      path: '/',
+      sameSite: 'lax' as const,
+      secure: process.env.NODE_ENV === 'production',
+      httpOnly: true,
+    };
+    req.res?.clearCookie(CookieNames.AccessToken, cookieOptions);
+    req.res?.clearCookie(CookieNames.SessionId, cookieOptions);
     return true;
   }
 }

@@ -17,9 +17,10 @@ export default function sessionConfig() {
     store: redisStore,
     cookie: {
       httpOnly: true,
-      secure: false,
-      sameSite: 'strict',
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
       maxAge: 2 * 24 * 3600 * 1000,
+      path: '/',
     },
   });
 }
