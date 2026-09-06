@@ -2335,6 +2335,7 @@ export function RegisterRoutes(app: Router) {
                 body: {"in":"body","name":"body","required":true,"ref":"CategoryNameCompactIn"},
         };
         app.post('/category-names',
+            authenticateMiddleware([{"":["ADMIN"]}]),
             ...(fetchMiddlewares<RequestHandler>(CategoryNameController)),
             ...(fetchMiddlewares<RequestHandler>(CategoryNameController.prototype.createCategoryName)),
 

@@ -18,7 +18,7 @@ export class CategoryNameController extends BaseController {
   @Response<ConstraintsDatabaseError>(409, 'ConstraintsDatabaseError -> A category name with the provided name already exists.')
   @Response<CategoryNameValidationError>(422, '4222 CategoryNameValidationError')
   @SuccessResponse(201, 'Category name created successfully.')
-  // @Security('', [RolesEnum.Admin]) TODO
+  @Security('', [RolesEnum.Admin])
   @Post()
   public async createCategoryName(@Body() body: CategoryNameCompactIn): Promise<CategoryNameCompleteOut> {
     return CategoryNameService.createCategoryName(body);

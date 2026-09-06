@@ -1,6 +1,7 @@
-import { describe, expect, test } from "vitest";
+import { beforeAll, describe, expect, test, vi } from "vitest";
 import { CategoryNameController } from "../../src/controllers/CategoryNameController";
 import { BacklogController } from "../../src/controllers/BacklogController";
+import BaseController from "../../src/controllers/BaseController";
 import { returnCategoryName, returnItem, returnRestaurant } from "../factories";
 import { RestaurantController } from "../../src/controllers/RestaurantController";
 import { randomUUID } from "crypto";
@@ -8,6 +9,13 @@ import { BacklogNotFound, CategoryNameNotFound, CategoryNotFound, ItemNotFound }
 import MenuchiError from "../../src/exceptions/MenuchiError";
 import BacklogService from "../../src/services/BacklogService";
 import { Prisma } from "@prisma/client";
+
+beforeAll(() => {
+  // Phase-1 tech debt: direct controller calls bypass HTTP auth.
+  // Mock guard here; real enforcement is covered via HTTP in AuthZ.test.ts.
+  // TODO(Phase-3): convert these to Supertest and drop this mock.
+  vi.spyOn(BaseController.prototype, "checkPermission").mockImplementation(() => {});
+});
 
 const categoryNameController = new CategoryNameController();
 const restaurantController = new RestaurantController();

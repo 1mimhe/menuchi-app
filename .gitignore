@@ -133,3 +133,6 @@ dist
 build
 
 .docker
+
+# Private local improvement plans (portfolio roadmap, not for commit)
+/docs/

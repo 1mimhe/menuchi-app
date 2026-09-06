@@ -6,6 +6,8 @@ import swaggerUi from 'swagger-ui-express';
 import * as swagger from './config/swagger.json';
 import morgan from 'morgan';
 import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import './config/RedisClient';
 import './config/TransformersRedisClient';
 import './config/OtpRedisClient';
@@ -17,7 +19,23 @@ export default function createServer() {
 
   const app = express();
 
-  app.use(cors({ origin: process.env.MENUCHI_FRONT_URL, credentials: true }));
+  // Required for Secure cookies behind reverse proxies (Docker/Nginx).
+  app.set('trust proxy', 1);
+
+  app.use(helmet({ crossOriginResourcePolicy: false }));
+  // Brute-force protection for auth endpoints.
+  app.use('/auth', rateLimit({ windowMs: 15 * 60 * 1000, max: 100, standardHeaders: true, legacyHeaders: false }));
+  app.use('/auth/send-otp', rateLimit({ windowMs: 10 * 60 * 1000, max: 5, standardHeaders: true, legacyHeaders: false }));
+
+  const allowedOrigins = (process.env.MENUCHI_FRONT_URL ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  app.use(cors({
+    origin: allowedOrigins.length ? allowedOrigins : false,
+    credentials: true,
+    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+  }));
   app.use(morgan(':date[web] | :url <:method, :status> | :response-time[3]ms'));
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));

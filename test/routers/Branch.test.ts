@@ -1,10 +1,18 @@
-import { describe, expect, test } from "vitest";
+import { beforeAll, describe, expect, test, vi } from "vitest";
 import { returnAddress, returnBranch, returnOpeningTimes, returnRestaurant } from "../factories";
 import { RestaurantController } from "../../src/controllers/RestaurantController";
 import { BranchController } from "../../src/controllers/BranchController";
+import BaseController from "../../src/controllers/BaseController";
 import { BranchNotFound, RestaurantNotFound } from "../../src/exceptions/NotFoundError";
 import { randomUUID } from "crypto";
 import { Prisma } from "@prisma/client";
+
+beforeAll(() => {
+  // Phase-1 tech debt: direct controller calls bypass HTTP auth.
+  // Mock guard here; real enforcement is covered via HTTP in AuthZ.test.ts.
+  // TODO(Phase-3): convert these to Supertest and drop this mock.
+  vi.spyOn(BaseController.prototype, "checkPermission").mockImplementation(() => {});
+});
 
 const restaurantObject = returnRestaurant();
 const branchObject = returnBranch();

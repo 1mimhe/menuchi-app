@@ -40,6 +40,9 @@ beforeAll(async () => {
         on: vi.fn(),
         once: vi.fn(),
         xAdd: vi.fn(),
+        incr: vi.fn(async () => 1),
+        expire: vi.fn(async () => 1),
+        del: vi.fn(async () => 1),
       }
     };
   });

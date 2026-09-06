@@ -13,8 +13,6 @@ export default class BaseController extends Controller {
   checkPermission(user?: UserSession, by?: PermissionScope, id?: UUID) {
     let isOk: boolean;
 
-    if (process.env.NODE_ENV === 'test') return;
-
     switch (by) {
       case PermissionScope.Restaurant:
         isOk = user?.restaurants?.some((restaurant) => restaurant.id === id) ? true : false;

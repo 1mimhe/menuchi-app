@@ -6,6 +6,7 @@ import BaseController from "./BaseController";
 import { PermissionScope, RolesEnum } from "../types/Enums";
 import express from 'express';
 import { ForbiddenError, UnauthorizedError } from "../exceptions/AuthError";
+import prismaClient from "../db/prisma";
 
 @Route('/s3')
 @Tags('S3')
@@ -27,6 +28,15 @@ export class S3Controller extends BaseController {
     const bucketName = process.env.S3_BUCKETNAME;
 
     this.checkPermission(req.session.user, PermissionScope.Branch, branchId);
+
+    // Never trust client restaurantId for key prefix — resolve server-side.
+    const branch = await prismaClient.branch.findUnique({
+      where: { id: branchId },
+      select: { restaurantId: true },
+    });
+    if (!branch?.restaurantId || branch.restaurantId !== restaurantId) {
+      throw new ForbiddenError();
+    }
 
     const itemPicKey = `${bucketName}/Restaurants/${restaurantId}/Items/${branchId}/${fileName}`;
     const itemPicUrl = await S3Service.generatePutPresignedUrl(itemPicKey);
@@ -131,6 +141,15 @@ export class S3Controller extends BaseController {
     const bucketName = process.env.S3_BUCKETNAME;
 
     this.checkPermission(req.session.user, PermissionScope.Menu, menuId);
+
+    // Never trust client restaurantId for key prefix — resolve via menu -> branch.
+    const menu = await prismaClient.menu.findUnique({
+      where: { id: menuId },
+      select: { branch: { select: { restaurantId: true } } },
+    });
+    if (!menu?.branch?.restaurantId || menu.branch.restaurantId !== restaurantId) {
+      throw new ForbiddenError();
+    }
 
     const menuFaviconKey = `${bucketName}/Restaurants/${restaurantId}/Menus/${menuId}/Favicon-${fileName}`;
     const menuFaviconUrl = await S3Service.generatePutPresignedUrl(menuFaviconKey);
