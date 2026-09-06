@@ -6576,7 +6576,13 @@
 				"tags": [
 					"Category Name"
 				],
-				"security": [],
+				"security": [
+					{
+						"": [
+							"ADMIN"
+						]
+					}
+				],
 				"parameters": [],
 				"requestBody": {
 					"required": true,
