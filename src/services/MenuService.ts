@@ -5,6 +5,7 @@ import { CylinderCompactIn, CreateCylinderCompleteOut, MenuCategoryCompactIn, Cr
 import MenuchiError from '../exceptions/MenuchiError';
 import { BranchNotFound, CategoryNotFound, CylinderNotFound, MenuNotFound } from '../exceptions/NotFoundError';
 import { isForeignKeyViolation, isRecordNotFound } from '../utils/prismaErrors';
+import { withUniqueRetry } from '../utils/positionRetry';
 import S3Service from './S3Service';
 import { BacklogCompleteOut } from '../types/RestaurantTypes';
 import { Days } from '../types/Enums';
@@ -46,8 +47,9 @@ export class MenuService {
     });
   }
 
-  async createCylinder(menuId: UUID, cylinderDTO: CylinderCompactIn): Promise<CreateCylinderCompleteOut | never> {
-    return this.prisma.$transaction(async (tx) => {
+  async createCylinder(menuId: UUID, cylinderDTO: CylinderCompactIn  ): Promise<CreateCylinderCompleteOut | never> {
+    // Retry wrapper: concurrent creates can read the same max position.
+    return withUniqueRetry(() => this.prisma.$transaction(async (tx) => {
       const maxPositionInMenu = await tx.cylinder.aggregate({
         _max: {
           positionInMenu: true
@@ -75,7 +77,7 @@ export class MenuService {
           throw new MenuNotFound();
         throw error;
       });
-    });
+    }));
   }
 
   async reorderCylinders(menuId: UUID, cylindersId: UUID[]) {
@@ -98,7 +100,8 @@ export class MenuService {
       items 
     }: MenuCategoryCompactIn
   ): Promise<CreateMenuCategoryCompleteOut | never> {
-    return this.prisma.$transaction(async (tx) => {
+    // Retry wrapper: concurrent creates can read the same max position.
+    return withUniqueRetry(() => this.prisma.$transaction(async (tx) => {
       const validItems = await tx.item.findMany({
         where: {
           id: {
@@ -178,7 +181,7 @@ export class MenuService {
       `;
 
       return newMenuCategory;
-    });
+    }));
   }
 
   async getMenuCategory(menuCategoryId: UUID) {
@@ -477,21 +480,26 @@ export class MenuService {
       }
     });
 
-    const categoriesSet = new Set<UUID>();
-    return Promise.all(menus.map(async (menu) => ({
-      ...menu,
-      cylindersCount: menu._count.cylinders,
-      itemsCount: menu.cylinders.reduce((acc, cylinder) => {
+    // NOTE: set is per-menu — previously declared outside the map, so
+    // categoriesCount accumulated across menus.
+    return Promise.all(menus.map(async (menu) => {
+      const categoriesSet = new Set<UUID>();
+      const itemsCount = menu.cylinders.reduce((acc, cylinder) => {
         return cylinder.menuCategories.reduce((acc, mc) => {
           categoriesSet.add(mc.categoryId!);
           return mc._count.items + acc
         }, 0) + acc
-      }, 0),
-      categoriesCount: categoriesSet.size,
-      favicon: await S3Service.generateGetPresignedUrl(menu.favicon),
-      cylinders: undefined,
-      _count: undefined
-    })));
+      }, 0);
+      return {
+        ...menu,
+        cylindersCount: menu._count.cylinders,
+        itemsCount,
+        categoriesCount: categoriesSet.size,
+        favicon: await S3Service.generateGetPresignedUrl(menu.favicon),
+        cylinders: undefined,
+        _count: undefined
+      };
+    }));
   }
 
   async getMenu(menuId: UUID): Promise<MenuCompletePlusOut | never> {

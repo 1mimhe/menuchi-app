@@ -118,7 +118,10 @@ export class AuthController extends BaseController {
       });
 
       req.session.accessToken = accessToken;
-      req.session.user = { id: body.email };
+      // Customer identity: session id is the verified OTP email (see
+      // OrderController.createOrder). Initialise order tracking here so
+      // recentlyOrderIds is never undefined downstream.
+      req.session.user = { id: body.email, recentlyOrderIds: [] };
       req.session.lastAccessed = new Date();
       await OtpRedisClient.del(attemptsKey);
     } else throw new InvalidCredentialsError();

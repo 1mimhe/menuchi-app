@@ -31,7 +31,9 @@ export class OrderService {
         },
       });
 
-      if (dbItems.length < 1) throw new ItemNotFound();
+      // Reject partial matches: every requested item must exist under this menu,
+      // otherwise totalPrice silently covers only a subset of the order.
+      if (dbItems.length !== items.length) throw new ItemNotFound();
 
       let totalPrice = 0;
       const orderItems = dbItems.map(item => {
@@ -75,6 +77,9 @@ export class OrderService {
     });
   }
 
+  // NOTE (N+1 presigning): each order item triggers one S3 presign call.
+  // Acceptable for typical order sizes; if this fans out, move to a CDN with
+  // long-lived URLs or a single batch-presign endpoint (see Phase-3 logging).
   async getOrders(menuId: UUID, skip = 0, take = 10, isCompleted = true): Promise<OrderCompleteOut[]> {
     const statusWhereClause = isCompleted ? {} :
                   { in: [OrderStatus.Pending, OrderStatus.Preparing, OrderStatus.Ready] };

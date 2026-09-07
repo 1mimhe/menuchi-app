@@ -18,6 +18,7 @@ import S3Service from './S3Service';
 import MenuchiError from '../exceptions/MenuchiError';
 import { CategoryCompactOut, CategoryCompleteOut, CategoryNameCompleteOut, CreateCategoryCompactIn } from '../types/CategoryTypes';
 import { isForeignKeyViolation, isRecordNotFound } from '../utils/prismaErrors';
+import { withUniqueRetry } from '../utils/positionRetry';
 
 export class BacklogService {
   constructor(private prisma: PrismaClient = prismaClient) {}
@@ -26,7 +27,8 @@ export class BacklogService {
     backlogId: UUID,
     { categoryNameId, name, ingredients, price, picKey }: ItemCompactIn
   ): Promise<CreateItemCompleteOut | never> {
-    return this.prisma.$transaction(async (tx) => {
+    // Retry wrapper: concurrent creates can read the same max position.
+    return withUniqueRetry(() => this.prisma.$transaction(async (tx) => {
       const maxCategoryPosition = await tx.category.aggregate({
         _max: {
           positionInBacklog: true,
@@ -102,7 +104,7 @@ export class BacklogService {
         ...item,
         categoryName: category.categoryName?.name,
       };
-    });
+    }));
   }
 
   async getItem(id: UUID): Promise<ItemCompleteOut | never> {
@@ -260,7 +262,8 @@ export class BacklogService {
     backlogId: UUID,
     { categoryNameId }: CreateCategoryCompactIn
   ): Promise<CategoryCompactOut | never> {
-    return this.prisma.$transaction(async (tx) => {
+    // Retry wrapper: concurrent creates can read the same max position.
+    return withUniqueRetry(() => this.prisma.$transaction(async (tx) => {
       const maxCategoryPosition = await tx.category.aggregate({
         _max: {
           positionInBacklog: true,
@@ -280,7 +283,7 @@ export class BacklogService {
           positionInBacklog
         }
       });
-    });
+    }));
   }
 
   async reorderItemsInCategory(backlogId: UUID, itemsId: UUID[]) {

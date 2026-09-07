@@ -154,9 +154,10 @@ export class MenuController extends BaseController {
     @Path() menuId: UUID,
     @Body() body: UUID[],
     @Request() req?: express.Request
-  ): Promise<number> {
+  ): Promise<null> {
     this.checkPermission(req?.session.user, PermissionScope.Menu, menuId);
-    return MenuService.reorderCylinders(menuId, body);
+    await MenuService.reorderCylinders(menuId, body);
+    return null;
   }
 
   /**
@@ -198,9 +199,10 @@ export class MenuController extends BaseController {
     @Path() menuId: UUID,
     @Body() body: UUID[],
     @Request() req?: express.Request
-  ): Promise<number> {
+  ): Promise<null> {
     this.checkPermission(req?.session.user, PermissionScope.Menu, menuId);
-    return MenuService.reorderMenuItems(menuId, body);
+    await MenuService.reorderMenuItems(menuId, body);
+    return null;
   }
 
   /**
@@ -234,9 +236,10 @@ export class MenuController extends BaseController {
     @Path() menuId: UUID,
     @Body() body: UUID[],
     @Request() req?: express.Request
-  ): Promise<number> {
+  ): Promise<null> {
     this.checkPermission(req?.session.user, PermissionScope.Menu, menuId);
-    return MenuService.reorderMenuCategories(menuId, body);
+    await MenuService.reorderMenuCategories(menuId, body);
+    return null;
   }
 
   /**

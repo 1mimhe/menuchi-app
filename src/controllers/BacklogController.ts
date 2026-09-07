@@ -102,9 +102,10 @@ export class BacklogController extends BaseController {
     @Path() backlogId: UUID,
     @Body() body: UUID[],
     @Request() req?: express.Request
-  ): Promise<number> {
+  ): Promise<null> {
     this.checkPermission(req?.session.user, PermissionScope.Backlog, backlogId);
-    return BacklogService.reorderItemsInCategory(backlogId, body);
+    await BacklogService.reorderItemsInCategory(backlogId, body);
+    return null;
   }
 
   /**
@@ -120,9 +121,10 @@ export class BacklogController extends BaseController {
     @Path() backlogId: UUID,
     @Body() body: UUID[],
     @Request() req?: express.Request
-  ): Promise<number> {
+  ): Promise<null> {
     this.checkPermission(req?.session.user, PermissionScope.Backlog, backlogId);
-    return BacklogService.reorderItemsInList(backlogId, body);
+    await BacklogService.reorderItemsInList(backlogId, body);
+    return null;
   }
 
   /**
@@ -174,9 +176,10 @@ export class BacklogController extends BaseController {
     @Path() backlogId: UUID,
     @Body() body: UUID[],
     @Request() req?: express.Request
-  ): Promise<number> {
+  ): Promise<null> {
     this.checkPermission(req?.session.user, PermissionScope.Backlog, backlogId);
-    return BacklogService.reorderCategoriesInBacklog(backlogId, body);
+    await BacklogService.reorderCategoriesInBacklog(backlogId, body);
+    return null;
   }
 
   /**

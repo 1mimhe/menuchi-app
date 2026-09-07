@@ -64,34 +64,37 @@ export class DashboardService {
         }
       });
 
-      const menusItems: ItemCompleteOut[] = [];
-      userRestaurants.forEach(restaurant => {
-        restaurant.branches.forEach(branch => {
-          branch.menus.forEach(menu => {
-            menu.cylinders.forEach(cylinder => {
-              cylinder.menuCategories.forEach(menuCategory => {
-                menuCategory.items.forEach(async (item) => {
-                  menusItems.push({
-                    id: item.id,
-                    createdAt: item.createdAt,
-                    updatedAt: item.updatedAt,
-                    deletedAt: item.deletedAt,
-                    categoryId: menuCategory.categoryId,
-                    categoryNameId: menuCategory.category?.categoryNameId,
-                    categoryName: menuCategory.category?.categoryName?.name,
-                    name: item.name,
-                    ingredients: item.ingredients,
-                    price: item.price,
-                    picUrl: item.picKey ? await this.s3.generateGetPresignedUrl(item.picKey) : null,
-                    isActive: item.isActive,
-                    orderCount: item.orderCount
-                  });
-                });
-              });
-            });
-          });
-        });
-      });
+      // Flatten first, then resolve presigned URLs in one Promise.all.
+      // (Previously forEach(async) was never awaited, so this always returned [].)
+      const entries = userRestaurants.flatMap(restaurant =>
+        restaurant.branches.flatMap(branch =>
+          branch.menus.flatMap(menu =>
+            menu.cylinders.flatMap(cylinder =>
+              cylinder.menuCategories.flatMap(menuCategory =>
+                menuCategory.items.map(item => ({ item, menuCategory }))
+              )
+            )
+          )
+        )
+      );
+
+      const menusItems: ItemCompleteOut[] = await Promise.all(
+        entries.map(async ({ item, menuCategory }) => ({
+          id: item.id,
+          createdAt: item.createdAt,
+          updatedAt: item.updatedAt,
+          deletedAt: item.deletedAt,
+          categoryId: menuCategory.categoryId,
+          categoryNameId: menuCategory.category?.categoryNameId,
+          categoryName: menuCategory.category?.categoryName?.name,
+          name: item.name,
+          ingredients: item.ingredients,
+          price: item.price,
+          picUrl: item.picKey ? await this.s3.generateGetPresignedUrl(item.picKey) : null,
+          isActive: item.isActive,
+          orderCount: item.orderCount
+        }))
+      );
 
       return menusItems.sort((a, b) => (b.orderCount ?? 0) - (a.orderCount ?? 0));
   }
