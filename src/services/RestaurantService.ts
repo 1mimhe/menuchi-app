@@ -10,7 +10,7 @@ import { UUID } from '../types/TypeAliases';
 import { RestaurantNotFound } from '../exceptions/NotFoundError';
 import S3Service from './S3Service';
 
-class RestaurantService {
+export class RestaurantService {
   constructor(private prisma: PrismaClient = prismaClient) {}
 
  async createRestaurant(

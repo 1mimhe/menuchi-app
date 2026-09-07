@@ -18,7 +18,7 @@ import S3Service from './S3Service';
 import MenuchiError from '../exceptions/MenuchiError';
 import { CategoryCompactOut, CategoryCompleteOut, CategoryNameCompleteOut, CreateCategoryCompactIn } from '../types/CategoryTypes';
 
-class BacklogService {
+export class BacklogService {
   constructor(private prisma: PrismaClient = prismaClient) {}
 
   async createItem(

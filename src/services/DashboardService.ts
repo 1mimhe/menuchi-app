@@ -3,10 +3,13 @@ import prismaClient from "../db/prisma";
 import { ItemCompleteOut } from "../types/ItemTypes";
 import { UUID } from "../types/TypeAliases";
 import { Days } from "../types/Enums";
-import S3Service from "./S3Service";
+import S3Service, { PresignedUrlGenerator } from "./S3Service";
 
-class DashboardService {
-  constructor(private prisma: PrismaClient = prismaClient) {}
+export class DashboardService {
+  constructor(
+    private prisma: PrismaClient = prismaClient,
+    private s3: PresignedUrlGenerator = S3Service
+  ) {}
 
   async getDayItems(userId: UUID): Promise<ItemCompleteOut[] | never> {
       const currentDay = Object.values(Days)[new Date().getDay()];
@@ -79,7 +82,7 @@ class DashboardService {
                     name: item.name,
                     ingredients: item.ingredients,
                     price: item.price,
-                    picUrl: item.picKey ? await S3Service.generateGetPresignedUrl(item.picKey) : null,
+                    picUrl: item.picKey ? await this.s3.generateGetPresignedUrl(item.picKey) : null,
                     isActive: item.isActive,
                     orderCount: item.orderCount
                   });

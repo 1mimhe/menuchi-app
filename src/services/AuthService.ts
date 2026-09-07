@@ -7,7 +7,7 @@ import { RolesEnum } from '../types/Enums';
 import jwt from 'jsonwebtoken';
 import { InvalidCredentialsError } from '../exceptions/AuthError';
 
-class AuthService {
+export class AuthService {
   constructor(private prisma: PrismaClient = prismaClient) {}
 
   async signup(userDTO: UserCompactIn, roles = [RolesEnum.RestaurantOwner]): Promise<UserCompleteOut | never> {

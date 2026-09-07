@@ -8,7 +8,7 @@ import S3Service from './S3Service';
 import { BacklogCompleteOut } from '../types/RestaurantTypes';
 import { Days } from '../types/Enums';
 
-class MenuService {
+export class MenuService {
   constructor(private prisma: PrismaClient = prismaClient) {}
 
   async createMenu(body: CreateMenuCompactIn): Promise<MenuCompeteWithResIdOut | never> {

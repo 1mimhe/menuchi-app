@@ -4,7 +4,7 @@ import { UUID } from '../types/TypeAliases';
 import { BranchNotFound, RestaurantNotFound } from '../exceptions/NotFoundError';
 import { AddressCompactIn, AddressCompleteOut, BranchBySlugCompleteOut, BranchCompletePlusOut, CreateBranchCompactIn, CreateBranchCompleteOut, OpeningTimesCompactIn, OpeningTimesCompleteOut, UpdateBranchCompactIn } from '../types/RestaurantTypes';
 
-class BranchService {
+export class BranchService {
   constructor(private prisma: PrismaClient = prismaClient) {}
 
   async createBranch(branch: CreateBranchCompactIn): Promise<CreateBranchCompleteOut | never> {
