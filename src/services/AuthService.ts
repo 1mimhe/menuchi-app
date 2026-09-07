@@ -43,16 +43,20 @@ export class AuthService {
       },
       include: {
         roles: true,
+        // Slim session payload (Phase-2): only ids are needed for permission
+        // checks — full branch/menu objects bloated Redis and went stale.
         restaurants: {
-          include: {
+          select: {
+            id: true,
             branches: {
-              include: {
-                backlog: true,
-                menus: true
-              }
-            }
-          }
-        }
+              select: {
+                id: true,
+                backlog: { select: { id: true } },
+                menus: { select: { id: true } },
+              },
+            },
+          },
+        },
       }
     }).catch((error: Error) => {
       if (isRecordNotFound(error))

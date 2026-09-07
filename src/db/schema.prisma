@@ -210,6 +210,10 @@ model Category {
   deletedAt         DateTime?      @map("deleted_at")
 
   @@unique([backlogId, categoryNameId])
+  // Guards max+1 position races (see withUniqueRetry): concurrent creates
+  // retry on P2002 instead of silently duplicating positions.
+  // NOTE: soft-deleted rows share the namespace (positions are never reused).
+  @@unique([backlogId, positionInBacklog])
   @@map("categories")
 }
 
@@ -251,6 +255,9 @@ model Item {
   updatedAt              DateTime      @updatedAt @map("updated_at")
   deletedAt              DateTime?     @map("deleted_at")
 
+  // Same max+1 race guard as categories (see withUniqueRetry).
+  @@unique([categoryId, positionInCategory])
+  @@unique([categoryId, positionInItemsList])
   @@map("items")
 }
 
@@ -272,6 +279,8 @@ model Cylinder {
   deletedAt      DateTime?      @map("deleted_at")
 
   @@unique([menuId, sat, sun, mon, tue, wed, thu, fri])
+  // Same max+1 race guard as categories (see withUniqueRetry).
+  @@unique([menuId, positionInMenu])
   @@map("cylinders")
 }
 
@@ -288,6 +297,8 @@ model MenuCategory {
   deletedAt          DateTime? @map("deleted_at")
 
   @@unique([categoryId, cylinderId])
+  // Same max+1 race guard as categories (see withUniqueRetry).
+  @@unique([cylinderId, positionInCylinder])
   @@map("menu_categories")
 }
 
