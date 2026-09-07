@@ -44,9 +44,11 @@ export default function createServer() {
 
   app.use('/docs', swaggerUi.serve, swaggerUi.setup(swagger));
   RegisterRoutes(app);
+  // 404 for unknown routes must come before error middleware (4-arg
+  // handlers never see unmatched routes).
+  app.use(notFoundHandler);
   app.use(errorPreprocessor)
   app.use(errorHandler);
-  app.use(notFoundHandler);
 
   return app;
 }

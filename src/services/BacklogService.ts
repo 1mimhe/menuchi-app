@@ -17,6 +17,7 @@ import { BacklogCompleteOut } from '../types/RestaurantTypes';
 import S3Service from './S3Service';
 import MenuchiError from '../exceptions/MenuchiError';
 import { CategoryCompactOut, CategoryCompleteOut, CategoryNameCompleteOut, CreateCategoryCompactIn } from '../types/CategoryTypes';
+import { isForeignKeyViolation, isRecordNotFound } from '../utils/prismaErrors';
 
 export class BacklogService {
   constructor(private prisma: PrismaClient = prismaClient) {}
@@ -57,10 +58,10 @@ export class BacklogService {
           },
         })
         .catch((error: Error) => {
-          if (error.message.includes('categories_backlog_id_fkey'))
+          if (isForeignKeyViolation(error, 'categories_backlog_id_fkey'))
             throw new BacklogNotFound();
           if (
-            error.message.includes('categories_category_name_id_fkey')
+            isForeignKeyViolation(error, 'categories_category_name_id_fkey')
           )
             throw new CategoryNameNotFound();
           throw error;
@@ -111,7 +112,7 @@ export class BacklogService {
         deletedAt: null
       }
     }).catch((error: Error) => {
-      if (error.message.includes('not found')) throw new ItemNotFound();
+      if (isRecordNotFound(error)) throw new ItemNotFound();
       throw error;
     });
   }
@@ -123,7 +124,7 @@ export class BacklogService {
         deletedAt: null
       }
     }).catch((error: Error) => {
-      if (error.message.includes('not found')) throw new CategoryNotFound();
+      if (isRecordNotFound(error)) throw new CategoryNotFound();
       throw error;
     });;
   }
@@ -160,7 +161,7 @@ export class BacklogService {
         },
       })
       .catch((error: Error) => {
-        if (error.message.includes('not found')) throw new BacklogNotFound();
+        if (isRecordNotFound(error)) throw new BacklogNotFound();
         throw error;
       });
 

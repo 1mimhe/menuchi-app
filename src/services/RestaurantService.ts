@@ -8,6 +8,7 @@ import {
 } from '../types/RestaurantTypes';
 import { UUID } from '../types/TypeAliases';
 import { RestaurantNotFound } from '../exceptions/NotFoundError';
+import { isRecordNotFound } from '../utils/prismaErrors';
 import S3Service from './S3Service';
 
 export class RestaurantService {
@@ -59,7 +60,7 @@ export class RestaurantService {
         },
       })
       .catch((error: Error) => {
-        if (error.message.includes('not found')) throw new RestaurantNotFound();
+        if (isRecordNotFound(error)) throw new RestaurantNotFound();
         throw error;
       });
 

@@ -4,6 +4,7 @@ import { UUID } from '../types/TypeAliases';
 import { CylinderCompactIn, CreateCylinderCompleteOut, MenuCategoryCompactIn, CreateMenuCategoryCompleteOut, MenuCompactIn, MenuCompleteOut, MenuCompletePlusOut, CreateMenuCompactIn, OwnerPreviewCompactOut, MenuPreviewCompleteOut, MenuViewCompleteOut as MenuViewCompleteOut, MenuCategoryCompleteOut, MenuCompleteWithCountsOut, MenuCompeteWithResIdOut } from '../types/MenuTypes';
 import MenuchiError from '../exceptions/MenuchiError';
 import { BranchNotFound, CategoryNotFound, CylinderNotFound, MenuNotFound } from '../exceptions/NotFoundError';
+import { isForeignKeyViolation, isRecordNotFound } from '../utils/prismaErrors';
 import S3Service from './S3Service';
 import { BacklogCompleteOut } from '../types/RestaurantTypes';
 import { Days } from '../types/Enums';
@@ -18,7 +19,7 @@ export class MenuService {
         branch: true
       }
     }).catch((error: Error) => {
-      if (error.message.includes('menus_branch_id_fkey'))
+      if (isForeignKeyViolation(error, 'menus_branch_id_fkey'))
         throw new BranchNotFound();
       throw error;
     });
@@ -39,7 +40,7 @@ export class MenuService {
       data: menuDTO
     })
     .catch((error: Error) => {
-      if (error.message.includes('not found'))
+      if (isRecordNotFound(error))
         throw new MenuNotFound();
       throw error;
     });
@@ -56,7 +57,7 @@ export class MenuService {
           deletedAt: null
         }
       }).catch((error: Error) => {
-        if (error.message.includes('cylinders_menu_id_fkey'))
+        if (isForeignKeyViolation(error, 'cylinders_menu_id_fkey'))
           throw new MenuNotFound();
         throw error;
       });
@@ -70,7 +71,7 @@ export class MenuService {
           positionInMenu
         }
       }).catch((error: Error) => {
-        if (error.message.includes('cylinders_menu_id_fkey'))
+        if (isForeignKeyViolation(error, 'cylinders_menu_id_fkey'))
           throw new MenuNotFound();
         throw error;
       });
@@ -147,7 +148,7 @@ export class MenuService {
           deletedAt: null
         }
       }).catch((error: Error) => {
-          if (error.message.includes('not found'))
+          if (isRecordNotFound(error))
             throw new MenuNotFound();
           throw error;
       });
@@ -160,9 +161,9 @@ export class MenuService {
           }
         }
       }).catch((error: Error) => {
-        if (error.message.includes('menu_categories_cylinder_id_fkey'))
+        if (isForeignKeyViolation(error, 'menu_categories_cylinder_id_fkey'))
           throw new CylinderNotFound();
-        if (error.message.includes('menu_categories_category_id_fkey'))
+        if (isForeignKeyViolation(error, 'menu_categories_category_id_fkey'))
           throw new CategoryNotFound();
         throw error;
       });
@@ -421,7 +422,7 @@ export class MenuService {
           },
         })
         .catch((error: Error) => {
-          if (error.message.includes('not found'))
+          if (isRecordNotFound(error))
             throw new BranchNotFound();
           throw error;
         });
@@ -527,7 +528,7 @@ export class MenuService {
       }
     })
     .catch((error: Error) => {
-      if (error.message.includes('not found'))
+      if (isRecordNotFound(error))
         throw new MenuNotFound();
       throw error;
     });
@@ -577,7 +578,7 @@ export class MenuService {
       }
     })
     .catch((error: Error) => {
-      if (error.message.includes('not found'))
+      if (isRecordNotFound(error))
         throw new MenuNotFound();
       throw error;
     });
@@ -619,7 +620,7 @@ export class MenuService {
         }
       }
     }).catch((error: Error) => {
-      if (error.message.includes('not found'))
+      if (isRecordNotFound(error))
         throw new MenuNotFound();
       throw error;
     });
@@ -713,7 +714,7 @@ export class MenuService {
         }
       }
     }).catch((error: Error) => {
-      if (error.message.includes('not found'))
+      if (isRecordNotFound(error))
         throw new MenuNotFound();
       throw error;
     });

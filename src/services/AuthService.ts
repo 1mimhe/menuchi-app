@@ -6,6 +6,7 @@ import bcrypt from 'bcryptjs';
 import { RolesEnum } from '../types/Enums';
 import jwt from 'jsonwebtoken';
 import { InvalidCredentialsError } from '../exceptions/AuthError';
+import { isRecordNotFound } from '../utils/prismaErrors';
 
 export class AuthService {
   constructor(private prisma: PrismaClient = prismaClient) {}
@@ -54,7 +55,7 @@ export class AuthService {
         }
       }
     }).catch((error: Error) => {
-      if (error.message.includes('not found'))
+      if (isRecordNotFound(error))
         throw new InvalidCredentialsError();
       throw error;
     });
