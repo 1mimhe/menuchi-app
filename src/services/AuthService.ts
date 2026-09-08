@@ -6,8 +6,9 @@ import bcrypt from 'bcryptjs';
 import { RolesEnum } from '../types/Enums';
 import jwt from 'jsonwebtoken';
 import { InvalidCredentialsError } from '../exceptions/AuthError';
+import { isRecordNotFound } from '../utils/prismaErrors';
 
-class AuthService {
+export class AuthService {
   constructor(private prisma: PrismaClient = prismaClient) {}
 
   async signup(userDTO: UserCompactIn, roles = [RolesEnum.RestaurantOwner]): Promise<UserCompleteOut | never> {
@@ -42,19 +43,23 @@ class AuthService {
       },
       include: {
         roles: true,
+        // Slim session payload (Phase-2): only ids are needed for permission
+        // checks — full branch/menu objects bloated Redis and went stale.
         restaurants: {
-          include: {
+          select: {
+            id: true,
             branches: {
-              include: {
-                backlog: true,
-                menus: true
-              }
-            }
-          }
-        }
+              select: {
+                id: true,
+                backlog: { select: { id: true } },
+                menus: { select: { id: true } },
+              },
+            },
+          },
+        },
       }
     }).catch((error: Error) => {
-      if (error.message.includes('not found'))
+      if (isRecordNotFound(error))
         throw new InvalidCredentialsError();
       throw error;
     });

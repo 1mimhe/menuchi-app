@@ -2,12 +2,15 @@ import { PrismaClient } from "@prisma/client";
 import prismaClient from '../db/prisma';
 import { Email, UUID } from "../types/TypeAliases";
 import { CreateOrderCompactIn, OrderCompleteOut } from "../types/OrderTypes";
-import S3Service from "./S3Service";
+import S3Service, { PresignedUrlGenerator } from "./S3Service";
 import { OrderStatus } from "../types/Enums";
 import { ItemNotFound } from "../exceptions/NotFoundError";
 
-class OrderService {
-  constructor(private prisma: PrismaClient = prismaClient) {}
+export class OrderService {
+  constructor(
+    private prisma: PrismaClient = prismaClient,
+    private s3: PresignedUrlGenerator = S3Service
+  ) {}
 
   async createOrder(customerEmail: Email, menuId: UUID, { items }: CreateOrderCompactIn): Promise<OrderCompleteOut | never> {
     return this.prisma.$transaction(async (tx) => {
@@ -28,7 +31,9 @@ class OrderService {
         },
       });
 
-      if (dbItems.length < 1) throw new ItemNotFound();
+      // Reject partial matches: every requested item must exist under this menu,
+      // otherwise totalPrice silently covers only a subset of the order.
+      if (dbItems.length !== items.length) throw new ItemNotFound();
 
       let totalPrice = 0;
       const orderItems = dbItems.map(item => {
@@ -63,7 +68,7 @@ class OrderService {
         ...order,
         orderItems: await Promise.all(order.orderItems.map(async (orderItem) => ({
           name: orderItem.item?.name,
-          pikUrl: await S3Service.generateGetPresignedUrl(orderItem.item?.picKey!) ?? null,
+          pikUrl: await this.s3.generateGetPresignedUrl(orderItem.item?.picKey!) ?? null,
           ...orderItem,
           item: undefined
         }))),
@@ -72,6 +77,9 @@ class OrderService {
     });
   }
 
+  // NOTE (N+1 presigning): each order item triggers one S3 presign call.
+  // Acceptable for typical order sizes; if this fans out, move to a CDN with
+  // long-lived URLs or a single batch-presign endpoint (see Phase-3 logging).
   async getOrders(menuId: UUID, skip = 0, take = 10, isCompleted = true): Promise<OrderCompleteOut[]> {
     const statusWhereClause = isCompleted ? {} :
                   { in: [OrderStatus.Pending, OrderStatus.Preparing, OrderStatus.Ready] };
@@ -95,7 +103,7 @@ class OrderService {
       ...order,
       orderItems: await Promise.all(order.orderItems.map(async (orderItem) => ({
         name: orderItem.item?.name,
-        pikUrl: await S3Service.generateGetPresignedUrl(orderItem.item?.picKey!) ?? null,
+        pikUrl: await this.s3.generateGetPresignedUrl(orderItem.item?.picKey!) ?? null,
         ...orderItem,
         item: undefined
       }))),
@@ -128,7 +136,7 @@ class OrderService {
       ...order,
       orderItems: await Promise.all(order.orderItems.map(async (orderItem) => ({
         name: orderItem.item?.name,
-        pikUrl: await S3Service.generateGetPresignedUrl(orderItem.item?.picKey!) ?? null,
+        pikUrl: await this.s3.generateGetPresignedUrl(orderItem.item?.picKey!) ?? null,
         ingredients: orderItem.item?.ingredients,
         ...orderItem,
         item: undefined
@@ -157,7 +165,7 @@ class OrderService {
       ...order,
       orderItems: await Promise.all(order.orderItems.map(async (orderItem) => ({
         name: orderItem.item?.name,
-        pikUrl: await S3Service.generateGetPresignedUrl(orderItem.item?.picKey!) ?? null,
+        pikUrl: await this.s3.generateGetPresignedUrl(orderItem.item?.picKey!) ?? null,
         ...orderItem,
         item: undefined
       }))),

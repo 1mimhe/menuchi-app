@@ -1,4 +1,4 @@
-import { Post, Route, Security, SuccessResponse, Tags, Response, Body, Request, Path, Get, Patch, Query } from "tsoa";
+import { Post, Route, Security, SuccessResponse, Tags, Response, Body, Request, Path, Get, Patch, Delete, Query } from "tsoa";
 import BaseController from "./BaseController";
 import { ForbiddenError, UnauthorizedError } from "../exceptions/AuthError";
 import { OrderStatus, PermissionScope, RolesEnum } from "../types/Enums";
@@ -27,8 +27,14 @@ export class OrderController extends BaseController {
     @Body() body: CreateOrderCompactIn,
     @Request() req?: express.Request
   ): Promise<OrderCompleteOut> {
-    const order = await OrderService.createOrder(req?.session.user?.id!,menuId, body);
-    req!.session.user!.recentlyOrderIds?.push(order.id);
+    // NOTE (customer identity): for OTP customers the session user id IS the
+    // verified email (see AuthController.checkOtp). Owners use createOrderByOwner
+    // with an explicit customerEmail instead.
+    const customerEmail = req?.session.user?.id as string;
+    const order = await OrderService.createOrder(customerEmail, menuId, body);
+    const user = req!.session.user!;
+    user.recentlyOrderIds ??= [];
+    user.recentlyOrderIds.push(order.id);
     return order;
   }
 
@@ -101,7 +107,7 @@ export class OrderController extends BaseController {
     @Request() req?: express.Request
   ): Promise<OrderCompleteOut[]> {
     this.checkPermission(req?.session.user, PermissionScope.Branch, branchId);
-    return OrderService.getAllOrders(branchId);
+    return OrderService.getAllOrders(branchId, skip, limit, isCompleted);
   }
 
   /**
@@ -142,7 +148,7 @@ export class OrderController extends BaseController {
   @Response<UnauthorizedError>(401, 'Unauthorized user.')
   @SuccessResponse(204, 'Orders deleted successfully. It doesn\'t retrieve anything.')
   @Security('', [RolesEnum.RestaurantOwner])
-  @Patch('/menus/{menuId}/orders')
+  @Delete('/menus/{menuId}/orders')
   async deleteOrders(
     @Path() menuId: UUID,
     @Body() orderItemsId: UUID[],

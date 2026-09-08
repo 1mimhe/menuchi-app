@@ -1720,7 +1720,7 @@ export function RegisterRoutes(app: Router) {
                 orderItemsId: {"in":"body","name":"orderItemsId","required":true,"dataType":"array","array":{"dataType":"refAlias","ref":"UUID"}},
                 req: {"in":"request","name":"req","dataType":"object"},
         };
-        app.patch('/menus/:menuId/orders',
+        app.delete('/menus/:menuId/orders',
             authenticateMiddleware([{"":["RESTAURANT_OWNER"]}]),
             ...(fetchMiddlewares<RequestHandler>(OrderController)),
             ...(fetchMiddlewares<RequestHandler>(OrderController.prototype.deleteOrders)),

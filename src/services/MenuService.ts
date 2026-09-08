@@ -4,11 +4,13 @@ import { UUID } from '../types/TypeAliases';
 import { CylinderCompactIn, CreateCylinderCompleteOut, MenuCategoryCompactIn, CreateMenuCategoryCompleteOut, MenuCompactIn, MenuCompleteOut, MenuCompletePlusOut, CreateMenuCompactIn, OwnerPreviewCompactOut, MenuPreviewCompleteOut, MenuViewCompleteOut as MenuViewCompleteOut, MenuCategoryCompleteOut, MenuCompleteWithCountsOut, MenuCompeteWithResIdOut } from '../types/MenuTypes';
 import MenuchiError from '../exceptions/MenuchiError';
 import { BranchNotFound, CategoryNotFound, CylinderNotFound, MenuNotFound } from '../exceptions/NotFoundError';
+import { isForeignKeyViolation, isRecordNotFound } from '../utils/prismaErrors';
+import { withUniqueRetry } from '../utils/positionRetry';
 import S3Service from './S3Service';
 import { BacklogCompleteOut } from '../types/RestaurantTypes';
 import { Days } from '../types/Enums';
 
-class MenuService {
+export class MenuService {
   constructor(private prisma: PrismaClient = prismaClient) {}
 
   async createMenu(body: CreateMenuCompactIn): Promise<MenuCompeteWithResIdOut | never> {
@@ -18,7 +20,7 @@ class MenuService {
         branch: true
       }
     }).catch((error: Error) => {
-      if (error.message.includes('menus_branch_id_fkey'))
+      if (isForeignKeyViolation(error, 'menus_branch_id_fkey'))
         throw new BranchNotFound();
       throw error;
     });
@@ -39,14 +41,15 @@ class MenuService {
       data: menuDTO
     })
     .catch((error: Error) => {
-      if (error.message.includes('not found'))
+      if (isRecordNotFound(error))
         throw new MenuNotFound();
       throw error;
     });
   }
 
-  async createCylinder(menuId: UUID, cylinderDTO: CylinderCompactIn): Promise<CreateCylinderCompleteOut | never> {
-    return this.prisma.$transaction(async (tx) => {
+  async createCylinder(menuId: UUID, cylinderDTO: CylinderCompactIn  ): Promise<CreateCylinderCompleteOut | never> {
+    // Retry wrapper: concurrent creates can read the same max position.
+    return withUniqueRetry(() => this.prisma.$transaction(async (tx) => {
       const maxPositionInMenu = await tx.cylinder.aggregate({
         _max: {
           positionInMenu: true
@@ -56,7 +59,7 @@ class MenuService {
           deletedAt: null
         }
       }).catch((error: Error) => {
-        if (error.message.includes('cylinders_menu_id_fkey'))
+        if (isForeignKeyViolation(error, 'cylinders_menu_id_fkey'))
           throw new MenuNotFound();
         throw error;
       });
@@ -70,11 +73,11 @@ class MenuService {
           positionInMenu
         }
       }).catch((error: Error) => {
-        if (error.message.includes('cylinders_menu_id_fkey'))
+        if (isForeignKeyViolation(error, 'cylinders_menu_id_fkey'))
           throw new MenuNotFound();
         throw error;
       });
-    });
+    }));
   }
 
   async reorderCylinders(menuId: UUID, cylindersId: UUID[]) {
@@ -97,7 +100,8 @@ class MenuService {
       items 
     }: MenuCategoryCompactIn
   ): Promise<CreateMenuCategoryCompleteOut | never> {
-    return this.prisma.$transaction(async (tx) => {
+    // Retry wrapper: concurrent creates can read the same max position.
+    return withUniqueRetry(() => this.prisma.$transaction(async (tx) => {
       const validItems = await tx.item.findMany({
         where: {
           id: {
@@ -147,7 +151,7 @@ class MenuService {
           deletedAt: null
         }
       }).catch((error: Error) => {
-          if (error.message.includes('not found'))
+          if (isRecordNotFound(error))
             throw new MenuNotFound();
           throw error;
       });
@@ -160,9 +164,9 @@ class MenuService {
           }
         }
       }).catch((error: Error) => {
-        if (error.message.includes('menu_categories_cylinder_id_fkey'))
+        if (isForeignKeyViolation(error, 'menu_categories_cylinder_id_fkey'))
           throw new CylinderNotFound();
-        if (error.message.includes('menu_categories_category_id_fkey'))
+        if (isForeignKeyViolation(error, 'menu_categories_category_id_fkey'))
           throw new CategoryNotFound();
         throw error;
       });
@@ -177,7 +181,7 @@ class MenuService {
       `;
 
       return newMenuCategory;
-    });
+    }));
   }
 
   async getMenuCategory(menuCategoryId: UUID) {
@@ -421,7 +425,7 @@ class MenuService {
           },
         })
         .catch((error: Error) => {
-          if (error.message.includes('not found'))
+          if (isRecordNotFound(error))
             throw new BranchNotFound();
           throw error;
         });
@@ -476,21 +480,26 @@ class MenuService {
       }
     });
 
-    const categoriesSet = new Set<UUID>();
-    return Promise.all(menus.map(async (menu) => ({
-      ...menu,
-      cylindersCount: menu._count.cylinders,
-      itemsCount: menu.cylinders.reduce((acc, cylinder) => {
+    // NOTE: set is per-menu — previously declared outside the map, so
+    // categoriesCount accumulated across menus.
+    return Promise.all(menus.map(async (menu) => {
+      const categoriesSet = new Set<UUID>();
+      const itemsCount = menu.cylinders.reduce((acc, cylinder) => {
         return cylinder.menuCategories.reduce((acc, mc) => {
           categoriesSet.add(mc.categoryId!);
           return mc._count.items + acc
         }, 0) + acc
-      }, 0),
-      categoriesCount: categoriesSet.size,
-      favicon: await S3Service.generateGetPresignedUrl(menu.favicon),
-      cylinders: undefined,
-      _count: undefined
-    })));
+      }, 0);
+      return {
+        ...menu,
+        cylindersCount: menu._count.cylinders,
+        itemsCount,
+        categoriesCount: categoriesSet.size,
+        favicon: await S3Service.generateGetPresignedUrl(menu.favicon),
+        cylinders: undefined,
+        _count: undefined
+      };
+    }));
   }
 
   async getMenu(menuId: UUID): Promise<MenuCompletePlusOut | never> {
@@ -527,7 +536,7 @@ class MenuService {
       }
     })
     .catch((error: Error) => {
-      if (error.message.includes('not found'))
+      if (isRecordNotFound(error))
         throw new MenuNotFound();
       throw error;
     });
@@ -577,7 +586,7 @@ class MenuService {
       }
     })
     .catch((error: Error) => {
-      if (error.message.includes('not found'))
+      if (isRecordNotFound(error))
         throw new MenuNotFound();
       throw error;
     });
@@ -619,7 +628,7 @@ class MenuService {
         }
       }
     }).catch((error: Error) => {
-      if (error.message.includes('not found'))
+      if (isRecordNotFound(error))
         throw new MenuNotFound();
       throw error;
     });
@@ -713,7 +722,7 @@ class MenuService {
         }
       }
     }).catch((error: Error) => {
-      if (error.message.includes('not found'))
+      if (isRecordNotFound(error))
         throw new MenuNotFound();
       throw error;
     });

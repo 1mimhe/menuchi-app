@@ -8,9 +8,10 @@ import {
 } from '../types/RestaurantTypes';
 import { UUID } from '../types/TypeAliases';
 import { RestaurantNotFound } from '../exceptions/NotFoundError';
+import { isRecordNotFound } from '../utils/prismaErrors';
 import S3Service from './S3Service';
 
-class RestaurantService {
+export class RestaurantService {
   constructor(private prisma: PrismaClient = prismaClient) {}
 
  async createRestaurant(
@@ -59,7 +60,7 @@ class RestaurantService {
         },
       })
       .catch((error: Error) => {
-        if (error.message.includes('not found')) throw new RestaurantNotFound();
+        if (isRecordNotFound(error)) throw new RestaurantNotFound();
         throw error;
       });
 

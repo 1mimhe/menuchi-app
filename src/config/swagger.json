@@ -4811,7 +4811,7 @@
 					}
 				]
 			},
-			"patch": {
+			"delete": {
 				"operationId": "DeleteOrders",
 				"responses": {
 					"204": {
@@ -5719,7 +5719,10 @@
 							"application/json": {
 								"schema": {
 									"type": "number",
-									"format": "double"
+									"enum": [
+										null
+									],
+									"nullable": true
 								}
 							}
 						}
@@ -5980,7 +5983,10 @@
 							"application/json": {
 								"schema": {
 									"type": "number",
-									"format": "double"
+									"enum": [
+										null
+									],
+									"nullable": true
 								}
 							}
 						}
@@ -6062,7 +6068,10 @@
 							"application/json": {
 								"schema": {
 									"type": "number",
-									"format": "double"
+									"enum": [
+										null
+									],
+									"nullable": true
 								}
 							}
 						}
@@ -6947,7 +6956,7 @@
 						}
 					}
 				},
-				"description": "Retrieves a branch by its slug.\r\n\r\nIt redirects to the [GET /menus/{menuId}/preview/customer](#/Menu/GetCustomerMenuPreview) if our branch has only one menu.\r\n\r\nPublicly accessible. No authentication required.",
+				"description": "Retrieves a branch by its slug.\r\n\r\nIt redirects to the [GET /menus/{menuId}/view](#/Menu/GetMenuView) if our branch has only one menu.\r\n\r\nPublicly accessible. No authentication required.",
 				"tags": [
 					"Branch"
 				],
@@ -7528,7 +7537,10 @@
 							"application/json": {
 								"schema": {
 									"type": "number",
-									"format": "double"
+									"enum": [
+										null
+									],
+									"nullable": true
 								}
 							}
 						}
@@ -7610,7 +7622,10 @@
 							"application/json": {
 								"schema": {
 									"type": "number",
-									"format": "double"
+									"enum": [
+										null
+									],
+									"nullable": true
 								}
 							}
 						}
@@ -7770,7 +7785,10 @@
 							"application/json": {
 								"schema": {
 									"type": "number",
-									"format": "double"
+									"enum": [
+										null
+									],
+									"nullable": true
 								}
 							}
 						}

@@ -1,27 +1,16 @@
-import { createClient, RedisClientType } from 'redis';
+import { RedisClientType } from 'redis';
+import { createRedisClient } from './redisFactory';
 
-class OtpRedisOtp {
-  private static instance: RedisClientType;
-  private static isConnectionSuccess = true;
+let instance: RedisClientType | undefined;
 
-  static getInstance() {
-    if (this.instance) return this.instance;
-
-    this.instance = createClient({
-      url: process.env.OTP_REDIS_URL
-    });
-
-    this.instance.on('error', (err: Error) => {
-      if (!this.isConnectionSuccess) return;
-      this.isConnectionSuccess = false;
-      console.log('Otp Redis Client Error.', err.message);
-    });
-
-    this.instance.once('connect', () => console.log('Otp Redis Connected.'));
-
-    this.instance.connect();
-    return this.instance;
+/** Lazy accessor — prefer over the default export in new code. */
+export function getOtpRedisClient(): RedisClientType {
+  if (!instance) {
+    instance = createRedisClient(process.env.OTP_REDIS_URL, 'Otp');
+    instance.connect();
   }
+  return instance;
 }
 
-export default OtpRedisOtp.getInstance();
+// TODO(Phase-3): migrate imports to getOtpRedisClient() and drop import-time connect.
+export default getOtpRedisClient();

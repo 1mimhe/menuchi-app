@@ -2,7 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import prismaClient from '../db/prisma';
 import { CategoryNameCompactIn, CategoryNameCompleteOut } from '../types/CategoryTypes';
 
-class CategoryNameService {
+export class CategoryNameService {
   constructor(private prisma: PrismaClient = prismaClient) {}
 
   async createCategoryName(categoryNameDTO: CategoryNameCompactIn): Promise<CategoryNameCompleteOut | never> {

@@ -26,77 +26,61 @@ import { InvalidTokenError } from '../exceptions/AuthError';
 import { JsonWebTokenError } from 'jsonwebtoken';
 import { PrismaClientInitializationError } from '@prisma/client/runtime/library';
 
+function mapValidateError(path: string, details: ErrorDetail[]): MenuchiError {
+  // NOTE: specific segments first — generic '/menus' must come last because
+  // menu sub-paths (e.g. /menus/{id}/cylinders) also contain it.
+  if (path.includes('/address')) return new AddressValidationError(details);
+  if (path.includes('/opening-times')) return new OpeningTimesValidationError(details);
+  if (path.includes('/branches')) return new BranchValidationError(details);
+  if (path.includes('/cylinders')) return new CylinderValidationError(details);
+  if (path.includes('/menu-categories')) return new MenuCategoryValidationError(details);
+  if (path.includes('/items')) return new ItemValidationError(details);
+  if (path.includes('/s3')) return new S3ValidationError(details);
+  if (path.includes('/auth')) return new UserValidationError(details);
+  if (path.includes('/menus')) return new MenuValidationError(details);
+
+  switch (path) {
+    case '/restaurants':
+      return new RestaurantValidationError(details);
+    case '/category-names':
+      return new CategoryNameValidationError(details);
+    default:
+      return new ValidationError(...[,,,], details);
+  }
+}
+
 export function errorPreprocessor(
   error: Error,
   req: Request,
-  res: Response,
+  _res: Response,
   next: NextFunction
 ): void {
+  // Express 4 error middleware must forward via next(), never throw.
   if (error instanceof MenuchiError) {
-    throw error;
+    next(error);
+    return;
   }
 
   if (error instanceof PrismaClientInitializationError) {
-    throw new MenuchiError('Can\'t reach database server.', 500);
+    next(new MenuchiError('Can\'t reach database server.', 500));
+    return;
   }
 
   if (error instanceof JsonWebTokenError) {
-    throw new InvalidTokenError();
+    next(new InvalidTokenError());
+    return;
   }
 
   if (error instanceof ValidateError) {
-    const path = req.path;
-    const details = validationErrorCleaner(error);
-
-    if (path.includes('/address')) {
-      throw new AddressValidationError(details);
-    }
-
-    if (path.includes('/opening-times')) {
-      throw new OpeningTimesValidationError(details);
-    }
-
-    if (path.includes('/branches')) {
-      throw new BranchValidationError(details);
-    }
-
-    if (path.includes('/items')) {
-      throw new ItemValidationError(details);
-    }
-
-    if (path.includes('/menus')) {
-      throw new MenuValidationError(details);
-    }
-
-    if (path.includes('/cylinders')) {
-      throw new CylinderValidationError(details);
-    }
-
-    if (path.includes('/menu-categories')) {
-      throw new MenuCategoryValidationError();
-    }
-
-    if (path.includes('/s3')) {
-      throw new S3ValidationError(details);
-    }
-
-    if (path.includes('/auth')) {
-      throw new UserValidationError(details);
-    }
-
-    switch (path) {
-      case '/restaurants':
-        throw new RestaurantValidationError(details);
-        break;
-      case '/category-names':
-        throw new CategoryNameValidationError(details);
-        break;
-      default:
-        throw new ValidationError(...[,,,], details);
-    }
+    next(mapValidateError(req.path, validationErrorCleaner(error)));
+    return;
   }
 
   if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    if (error.code === 'P2025') {
+      next(new MenuchiError('Resource not found.', 404));
+      return;
+    }
     const field = `Fields [${
       error.meta?.target ?? error.meta?.field_name
     }] at ${error.meta?.modelName} model`;
@@ -104,35 +88,45 @@ export function errorPreprocessor(
     const message = lines[lines.length - 1];
 
     const detail: ErrorDetail[] = [{ field, message }];
-    throw new ConstraintsDatabaseError(detail);
+    next(new ConstraintsDatabaseError(detail));
+    return;
   }
 
   if (error instanceof Prisma.PrismaClientValidationError) {
-    throw new ValidationDatabaseError(error.message);
+    next(new ValidationDatabaseError(error.message));
+    return;
   }
 
-  throw new MenuchiError(error.message, 500);
+  next(new MenuchiError(error.message, 500));
 }
 
 export function errorHandler(
-  error: MenuchiError,
-  req: Request,
+  error: Error,
+  _req: Request,
   res: Response,
-  next: NextFunction
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _next: NextFunction
 ): void {
+  // Safety net: anything reaching here that isn't a MenuchiError is a bug —
+  // never leak internals, never crash on missing .status.
+  const normalized = error instanceof MenuchiError
+    ? error
+    : new MenuchiError('Internal error.', 500);
+
   if (process.env.NODE_ENV?.trim() !== 'test')
-    console.error(error);
-  res.status(error.status).json({
-    code: error.code,
-    message: error.message,
-    details: error.details,
+    console.error(normalized);
+  res.status(normalized.status).json({
+    code: normalized.code,
+    message: normalized.message,
+    details: normalized.details,
   });
 }
 
 export function notFoundHandler(
   req: Request,
   res: Response,
-  next: NextFunction
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _next: NextFunction
 ): void {
   res.status(404).json({
     success: false,

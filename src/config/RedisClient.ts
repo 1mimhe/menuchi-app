@@ -1,27 +1,16 @@
-import { createClient, RedisClientType } from 'redis';
+import { RedisClientType } from 'redis';
+import { createRedisClient } from './redisFactory';
 
-class RedisClient {
-  private static instance: RedisClientType;
-  private static isConnectionSuccess = true;
+let instance: RedisClientType | undefined;
 
-  static getInstance() {
-    if (this.instance) return this.instance;
-
-    this.instance = createClient({
-      url: process.env.REDIS_URL
-    });
-
-    this.instance.on('error', (err: Error) => {
-      if (!this.isConnectionSuccess) return;
-      this.isConnectionSuccess = false;
-      console.log('Redis Client Error.', err.message);
-    });
-
-    this.instance.once('connect', () => console.log('Redis Connected.'));
-
-    this.instance.connect();
-    return this.instance;
+/** Lazy accessor — prefer over the default export in new code. */
+export function getRedisClient(): RedisClientType {
+  if (!instance) {
+    instance = createRedisClient(process.env.REDIS_URL, 'Session');
+    instance.connect();
   }
+  return instance;
 }
 
-export default RedisClient.getInstance();
+// TODO(Phase-3): migrate imports to getRedisClient() and drop import-time connect.
+export default getRedisClient();

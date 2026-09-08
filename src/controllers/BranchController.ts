@@ -65,7 +65,7 @@ export class BranchController extends BaseController {
   /**
    * Retrieves a branch by its slug.
    * 
-   * It redirects to the [GET /menus/{menuId}/preview/customer](#/Menu/GetCustomerMenuPreview) if our branch has only one menu.
+   * It redirects to the [GET /menus/{menuId}/view](#/Menu/GetMenuView) if our branch has only one menu.
    * 
    * Publicly accessible. No authentication required.
    */
@@ -83,7 +83,7 @@ export class BranchController extends BaseController {
 
     if (branch.menus?.length! === 1) {
       return redirect(302, undefined, {
-        Location: `/menus/${branch.menus?.[0]?.id}/preview/customer`
+        Location: `/menus/${branch.menus?.[0]?.id}/view`
       });
     }
 

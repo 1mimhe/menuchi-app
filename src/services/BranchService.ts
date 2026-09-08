@@ -2,9 +2,10 @@ import { PrismaClient } from '@prisma/client';
 import prismaClient from '../db/prisma';
 import { UUID } from '../types/TypeAliases';
 import { BranchNotFound, RestaurantNotFound } from '../exceptions/NotFoundError';
+import { isForeignKeyViolation, isRecordNotFound } from '../utils/prismaErrors';
 import { AddressCompactIn, AddressCompleteOut, BranchBySlugCompleteOut, BranchCompletePlusOut, CreateBranchCompactIn, CreateBranchCompleteOut, OpeningTimesCompactIn, OpeningTimesCompleteOut, UpdateBranchCompactIn } from '../types/RestaurantTypes';
 
-class BranchService {
+export class BranchService {
   constructor(private prisma: PrismaClient = prismaClient) {}
 
   async createBranch(branch: CreateBranchCompactIn): Promise<CreateBranchCompleteOut | never> {
@@ -19,7 +20,7 @@ class BranchService {
         backlog: true
       }
     }).catch((error: Error) => {
-      if (error.message.includes('branches_restaurant_id_fkey'))
+      if (isForeignKeyViolation(error, 'branches_restaurant_id_fkey'))
         throw new RestaurantNotFound();
       throw error;
     });
@@ -36,7 +37,7 @@ class BranchService {
         openingTimes: true
       }
     }).catch((error: Error) => {
-      if (error.message.includes('not found'))
+      if (isRecordNotFound(error))
         throw new BranchNotFound();
       throw error;
     })
@@ -54,7 +55,7 @@ class BranchService {
         menus: true
       }
     }).catch((error: Error) => {
-      if (error.message.includes('not found'))
+      if (isRecordNotFound(error))
         throw new BranchNotFound();
       throw error; 
     });
@@ -82,7 +83,7 @@ class BranchService {
         ...address,
       },
     }).catch((error: Error) => {
-      if (error.message.includes('addresses_branch_id_fkey'))
+      if (isForeignKeyViolation(error, 'addresses_branch_id_fkey'))
         throw new BranchNotFound();
       throw error;
     });
@@ -101,7 +102,7 @@ class BranchService {
         ...openingTimes,
       },
     }).catch((error: Error) => {
-      if (error.message.includes('opening_times_branch_id_fkey'))
+      if (isForeignKeyViolation(error, 'opening_times_branch_id_fkey'))
         throw new BranchNotFound();
       throw error;
     });
