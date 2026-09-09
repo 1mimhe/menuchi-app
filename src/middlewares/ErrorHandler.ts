@@ -16,10 +16,7 @@ import {
   ValidationError,
 } from '../exceptions/ValidationError';
 import MenuchiError from '../exceptions/MenuchiError';
-import {
-  ConstraintsDatabaseError,
-  ValidationDatabaseError,
-} from '../exceptions/DatabaseError';
+import { ConstraintsDatabaseError, ValidationDatabaseError } from '../exceptions/DatabaseError';
 import { ErrorDetail } from '../types/ErrorTypes';
 import { Prisma } from '@prisma/client';
 import { InvalidTokenError } from '../exceptions/AuthError';
@@ -45,7 +42,7 @@ function mapValidateError(path: string, details: ErrorDetail[]): MenuchiError {
     case '/category-names':
       return new CategoryNameValidationError(details);
     default:
-      return new ValidationError(...[,,,], details);
+      return new ValidationError('Validation failed', 422, 4220, details);
   }
 }
 
@@ -62,7 +59,7 @@ export function errorPreprocessor(
   }
 
   if (error instanceof PrismaClientInitializationError) {
-    next(new MenuchiError('Can\'t reach database server.', 500));
+    next(new MenuchiError("Can't reach database server.", 500));
     return;
   }
 
@@ -100,21 +97,27 @@ export function errorPreprocessor(
   next(new MenuchiError(error.message, 500));
 }
 
-export function errorHandler(
-  error: Error,
-  _req: Request,
-  res: Response,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _next: NextFunction
-): void {
+export function errorHandler(error: Error, req: Request, res: Response, _next: NextFunction): void {
   // Safety net: anything reaching here that isn't a MenuchiError is a bug —
   // never leak internals, never crash on missing .status.
-  const normalized = error instanceof MenuchiError
-    ? error
-    : new MenuchiError('Internal error.', 500);
+  const normalized =
+    error instanceof MenuchiError ? error : new MenuchiError('Internal error.', 500);
 
-  if (process.env.NODE_ENV?.trim() !== 'test')
-    console.error(normalized);
+  const reqId = (req as unknown as { id?: string }).id;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { logger } = require('../lib/logger') as typeof import('../lib/logger');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getEnv } = require('../config/env') as typeof import('../config/env');
+    const isTest = getEnv().NODE_ENV === 'test';
+    if (!isTest) {
+      logger.error({ err: normalized, reqId }, normalized.message);
+    }
+  } catch {
+    if (process.env.NODE_ENV?.trim() !== 'test') {
+      console.error(normalized);
+    }
+  }
   res.status(normalized.status).json({
     code: normalized.code,
     message: normalized.message,
@@ -122,12 +125,7 @@ export function errorHandler(
   });
 }
 
-export function notFoundHandler(
-  req: Request,
-  res: Response,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _next: NextFunction
-): void {
+export function notFoundHandler(req: Request, res: Response, _next: NextFunction): void {
   res.status(404).json({
     success: false,
     message: `Route ${req.path} not found.`,
