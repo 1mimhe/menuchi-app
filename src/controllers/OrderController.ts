@@ -1,19 +1,33 @@
-import { Post, Route, Security, SuccessResponse, Tags, Response, Body, Request, Path, Get, Patch, Delete, Query } from "tsoa";
-import BaseController from "./BaseController";
-import { ForbiddenError, UnauthorizedError } from "../exceptions/AuthError";
-import { OrderStatus, PermissionScope, RolesEnum } from "../types/Enums";
+import {
+  Post,
+  Route,
+  Security,
+  SuccessResponse,
+  Tags,
+  Response,
+  Body,
+  Request,
+  Path,
+  Get,
+  Patch,
+  Delete,
+  Query,
+} from 'tsoa';
+import BaseController from './BaseController';
+import { ForbiddenError, UnauthorizedError } from '../exceptions/AuthError';
+import { OrderStatus, PermissionScope, RolesEnum } from '../types/Enums';
 import express from 'express';
-import OrderService from "../services/OrderService";
-import { CreateOrderCompactIn, CreateOrderCompleteIn, OrderCompleteOut } from "../types/OrderTypes";
-import { Int, UUID } from "../types/TypeAliases";
-import { ItemNotFound } from "../exceptions/NotFoundError";
+import { resolveContainer } from '../container';
+import { CreateOrderCompactIn, CreateOrderCompleteIn, OrderCompleteOut } from '../types/OrderTypes';
+import { Int, UUID } from '../types/TypeAliases';
+import { ItemNotFound } from '../exceptions/NotFoundError';
 
 @Route()
 @Tags('Order')
 export class OrderController extends BaseController {
   /**
    * Creates a new order for a specific menu.
-   * 
+   *
    * Accessible to restaurant customers.
    */
   @Response<ItemNotFound>(404, '4043 ItemNotFound')
@@ -31,7 +45,7 @@ export class OrderController extends BaseController {
     // verified email (see AuthController.checkOtp). Owners use createOrderByOwner
     // with an explicit customerEmail instead.
     const customerEmail = req?.session.user?.id as string;
-    const order = await OrderService.createOrder(customerEmail, menuId, body);
+    const order = await resolveContainer(req).order.createOrder(customerEmail, menuId, body);
     const user = req!.session.user!;
     user.recentlyOrderIds ??= [];
     user.recentlyOrderIds.push(order.id);
@@ -40,7 +54,7 @@ export class OrderController extends BaseController {
 
   /**
    * Creates a new order for a specific menu.
-   * 
+   *
    * Accessible to restaurant owners.
    */
   @Response<ItemNotFound>(404, '4043 ItemNotFound')
@@ -55,7 +69,7 @@ export class OrderController extends BaseController {
     @Request() req?: express.Request
   ): Promise<OrderCompleteOut> {
     this.checkPermission(req?.session.user, PermissionScope.Menu, menuId);
-    return OrderService.createOrder(body.customerEmail, menuId, body);
+    return resolveContainer(req).order.createOrder(body.customerEmail, menuId, body);
   }
 
   /**
@@ -72,16 +86,16 @@ export class OrderController extends BaseController {
     @Query() limit?: Int,
     /**
      * Filters orders based on completion status.
-     * 
+     *
      * Set to `false` to retrieve only ongoing (not completed) orders.
-     * 
+     *
      * Defaults to `true`, which returns all orders.
      */
     @Query() isCompleted?: boolean,
     @Request() req?: express.Request
   ): Promise<OrderCompleteOut[]> {
     this.checkPermission(req?.session.user, PermissionScope.Menu, menuId);
-    return OrderService.getOrders(menuId, skip, limit, isCompleted);
+    return resolveContainer(req).order.getOrders(menuId, skip, limit, isCompleted);
   }
 
   /**
@@ -98,16 +112,16 @@ export class OrderController extends BaseController {
     @Query() limit?: Int,
     /**
      * Filters orders based on completion status.
-     * 
+     *
      * Set to `false` to retrieve only ongoing (not completed) orders.
-     * 
+     *
      * Defaults to `true`, which returns all orders.
      */
     @Query() isCompleted?: boolean,
     @Request() req?: express.Request
   ): Promise<OrderCompleteOut[]> {
     this.checkPermission(req?.session.user, PermissionScope.Branch, branchId);
-    return OrderService.getAllOrders(branchId, skip, limit, isCompleted);
+    return resolveContainer(req).order.getAllOrders(branchId, skip, limit, isCompleted);
   }
 
   /**
@@ -119,7 +133,7 @@ export class OrderController extends BaseController {
   @Security('', [RolesEnum.RestaurantCustomer])
   @Get('/customer/orders')
   async getRecentlyOrders(@Request() req?: express.Request): Promise<OrderCompleteOut[]> {
-    return OrderService.getRecentlyOrders(req!.session.user!.recentlyOrderIds!);
+    return resolveContainer(req).order.getRecentlyOrders(req!.session.user!.recentlyOrderIds!);
   }
 
   /**
@@ -137,7 +151,7 @@ export class OrderController extends BaseController {
     @Request() req?: express.Request
   ): Promise<null> {
     this.checkPermission(req?.session.user, PermissionScope.Menu, menuId);
-    await OrderService.updateOrderStatus(orderId, body.status);
+    await resolveContainer(req).order.updateOrderStatus(orderId, body.status);
     return null;
   }
 
@@ -146,7 +160,7 @@ export class OrderController extends BaseController {
    */
   @Response<ForbiddenError>(403, 'Access Denied. You are not authorized to perform this action.')
   @Response<UnauthorizedError>(401, 'Unauthorized user.')
-  @SuccessResponse(204, 'Orders deleted successfully. It doesn\'t retrieve anything.')
+  @SuccessResponse(204, "Orders deleted successfully. It doesn't retrieve anything.")
   @Security('', [RolesEnum.RestaurantOwner])
   @Delete('/menus/{menuId}/orders')
   async deleteOrders(
@@ -155,7 +169,7 @@ export class OrderController extends BaseController {
     @Request() req?: express.Request
   ): Promise<null> {
     this.checkPermission(req?.session.user, PermissionScope.Menu, menuId);
-    await OrderService.deleteOrders(menuId, orderItemsId);
+    await resolveContainer(req).order.deleteOrders(menuId, orderItemsId);
     return null;
   }
 }
