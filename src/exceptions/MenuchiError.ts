@@ -1,4 +1,4 @@
-import { ErrorDetail } from "../types/ErrorTypes";
+import { ErrorDetail } from '../types/ErrorTypes';
 
 export default class MenuchiError extends Error {
   constructor(

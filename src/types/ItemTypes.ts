@@ -1,5 +1,5 @@
-import { CompleteOut } from "./BaseTypes";
-import { Boolean, DefaultString, Int, LongString, URL, UUID } from "./TypeAliases";
+import { CompleteOut } from './BaseTypes';
+import { Boolean, DefaultString, Int, LongString, URL, UUID } from './TypeAliases';
 
 export interface ItemCompactIn {
   categoryNameId: UUID;
@@ -32,7 +32,7 @@ export interface ItemCompleteOut extends CompleteOut {
   picUrl?: URL | null;
   positionInItemsList?: Int | null;
   positionInCategory?: Int | null;
-  positionInMenuCategory?: Int | null
+  positionInMenuCategory?: Int | null;
   isActive?: Boolean | null;
   orderCount?: Int | null;
 }

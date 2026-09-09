@@ -1,5 +1,5 @@
-import { CompleteOut } from "./BaseTypes";
-import { Email, IranPhoneNumber, StrongPassword, Username } from "./TypeAliases"
+import { CompleteOut } from './BaseTypes';
+import { Email, IranPhoneNumber, StrongPassword, Username } from './TypeAliases';
 
 export interface UserCompactIn {
   phoneNumber: IranPhoneNumber;

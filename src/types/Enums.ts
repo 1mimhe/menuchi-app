@@ -1,25 +1,25 @@
 export enum RolesEnum {
   Admin = 'ADMIN',
   RestaurantOwner = 'RESTAURANT_OWNER',
-  RestaurantCustomer = 'RESTAURANT_CUSTOMER'
+  RestaurantCustomer = 'RESTAURANT_CUSTOMER',
 }
 
 export enum CookieNames {
   SessionId = 'session-id',
-  AccessToken = 'access-token'
+  AccessToken = 'access-token',
 }
 
 export enum PermissionScope {
   Restaurant,
   Branch,
   Backlog,
-  Menu
+  Menu,
 }
 
 export enum SessionUpdateScope {
   Restaurant,
   Branch,
-  Menu
+  Menu,
 }
 
 export enum OrderStatus {
@@ -27,21 +27,21 @@ export enum OrderStatus {
   Canceled = 'CANCELED',
   Preparing = 'PREPARING',
   Ready = 'READY',
-  Done = 'DONE'
+  Done = 'DONE',
 }
 
 export enum Days {
-  Saturday ='sat',
+  Saturday = 'sat',
   Sunday = 'sun',
   Monday = 'mon',
   Tuesday = 'tue',
   Wednesday = 'wed',
   Thursday = 'thu',
-  Friday = 'fri'
+  Friday = 'fri',
 }
 
 export enum SyncOperations {
   Created = 'CREATED',
   Updated = 'UPDATED',
-  Deleted = 'DELETED'
-} 
+  Deleted = 'DELETED',
+}

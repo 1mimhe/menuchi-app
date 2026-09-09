@@ -21,7 +21,7 @@ export function applySessionUpdate(scope: SessionUpdateScope, update: SessionUpd
   switch (scope) {
     case SessionUpdateScope.Restaurant: {
       const restaurantUpdate = update as RestaurantUpdateSession;
-      const exists = userSession.restaurants.some(r => r.id === restaurantUpdate.restaurantId);
+      const exists = userSession.restaurants.some((r) => r.id === restaurantUpdate.restaurantId);
       if (!exists) {
         userSession.restaurants.push({
           id: restaurantUpdate.restaurantId,
@@ -33,8 +33,8 @@ export function applySessionUpdate(scope: SessionUpdateScope, update: SessionUpd
 
     case SessionUpdateScope.Branch: {
       const branchUpdate = update as BranchUpdateSession;
-      const restaurant = userSession.restaurants.find(r => r.id === branchUpdate.restaurantId);
-      if (restaurant && !restaurant.branches.some(b => b.id === branchUpdate.branch.id)) {
+      const restaurant = userSession.restaurants.find((r) => r.id === branchUpdate.restaurantId);
+      if (restaurant && !restaurant.branches.some((b) => b.id === branchUpdate.branch.id)) {
         restaurant.branches.push({
           id: branchUpdate.branch.id,
           backlogId: branchUpdate.branch.backlogId,
@@ -45,8 +45,8 @@ export function applySessionUpdate(scope: SessionUpdateScope, update: SessionUpd
 
     case SessionUpdateScope.Menu: {
       const menuUpdate = update as MenuUpdateSession;
-      const restaurant = userSession.restaurants.find(r => r.id === menuUpdate.restaurantId);
-      const branch = restaurant?.branches.find(b => b.id === menuUpdate.branchId);
+      const restaurant = userSession.restaurants.find((r) => r.id === menuUpdate.restaurantId);
+      const branch = restaurant?.branches.find((b) => b.id === menuUpdate.branchId);
       if (branch) {
         branch.menus ??= [];
         if (!branch.menus.includes(menuUpdate.menuId)) {
@@ -65,20 +65,33 @@ function removeId(list: UUID[] | undefined, id: UUID): void {
 }
 
 /** Removal counterparts for deletions — keeps session from going stale. */
-export function removeRestaurantFromSession(userSession: SessionUpdate['userSession'], restaurantId: UUID): void {
+export function removeRestaurantFromSession(
+  userSession: SessionUpdate['userSession'],
+  restaurantId: UUID
+): void {
   if (!userSession?.restaurants) return;
-  userSession.restaurants = userSession.restaurants.filter(r => r.id !== restaurantId);
+  userSession.restaurants = userSession.restaurants.filter((r) => r.id !== restaurantId);
 }
 
-export function removeBranchFromSession(userSession: SessionUpdate['userSession'], restaurantId: UUID, branchId: UUID): void {
-  const restaurant = userSession?.restaurants?.find(r => r.id === restaurantId);
+export function removeBranchFromSession(
+  userSession: SessionUpdate['userSession'],
+  restaurantId: UUID,
+  branchId: UUID
+): void {
+  const restaurant = userSession?.restaurants?.find((r) => r.id === restaurantId);
   if (restaurant) {
-    restaurant.branches = restaurant.branches.filter(b => b.id !== branchId);
+    restaurant.branches = restaurant.branches.filter((b) => b.id !== branchId);
   }
 }
 
-export function removeMenuFromSession(userSession: SessionUpdate['userSession'], restaurantId: UUID, branchId: UUID, menuId: UUID): void {
+export function removeMenuFromSession(
+  userSession: SessionUpdate['userSession'],
+  restaurantId: UUID,
+  branchId: UUID,
+  menuId: UUID
+): void {
   const branch = userSession?.restaurants
-    ?.find(r => r.id === restaurantId)?.branches.find(b => b.id === branchId);
+    ?.find((r) => r.id === restaurantId)
+    ?.branches.find((b) => b.id === branchId);
   removeId(branch?.menus, menuId);
 }

@@ -1,11 +1,7 @@
 import MenuchiError from './MenuchiError';
 
 export class NotFoundError extends MenuchiError {
-  constructor(
-    message: string = 'Not found error',
-    status: number = 404,
-    code?: number
-  ) {
+  constructor(message: string = 'Not found error', status: number = 404, code?: number) {
     super(message, status, code);
   }
 }
