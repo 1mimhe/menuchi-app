@@ -11,10 +11,7 @@ import {
 import { PermissionScope, SessionUpdateScope } from '../../src/types/Enums';
 import { UserSession } from '../../src/types/AuthTypes';
 import { isForeignKeyViolation, isRecordNotFound } from '../../src/utils/prismaErrors';
-import {
-  errorPreprocessor,
-  notFoundHandler,
-} from '../../src/middlewares/ErrorHandler';
+import { errorPreprocessor, notFoundHandler } from '../../src/middlewares/ErrorHandler';
 import MenuchiError from '../../src/exceptions/MenuchiError';
 import { CylinderValidationError } from '../../src/exceptions/ValidationError';
 import { DashboardService } from '../../src/services/DashboardService';
@@ -33,9 +30,7 @@ function knownError(code: string, meta?: Record<string, unknown>) {
 describe('permissionGuard', () => {
   const user: UserSession = {
     id: 'u1',
-    restaurants: [
-      { id: 'r1', branches: [{ id: 'b1', backlogId: 'bl1', menus: ['m1'] }] },
-    ],
+    restaurants: [{ id: 'r1', branches: [{ id: 'b1', backlogId: 'bl1', menus: ['m1'] }] }],
   };
 
   test('grants own restaurant/branch/backlog/menu', () => {
@@ -58,19 +53,27 @@ describe('permissionGuard', () => {
 describe('sessionSync', () => {
   test('dedupes repeat pushes', () => {
     const userSession: UserSession = { id: 'u1', restaurants: [] };
-    const update = { userSession, restaurantId: 'r1', branch: { id: 'b1', backlogId: 'bl1' } } as const;
+    const update = {
+      userSession,
+      restaurantId: 'r1',
+      branch: { id: 'b1', backlogId: 'bl1' },
+    } as const;
     applySessionUpdate(SessionUpdateScope.Restaurant, update as never);
     applySessionUpdate(SessionUpdateScope.Restaurant, update as never);
     expect(userSession.restaurants).toHaveLength(1);
 
-    applySessionUpdate(
-      SessionUpdateScope.Menu,
-      { userSession, restaurantId: 'r1', branchId: 'b1', menuId: 'm1' } as never
-    );
-    applySessionUpdate(
-      SessionUpdateScope.Menu,
-      { userSession, restaurantId: 'r1', branchId: 'b1', menuId: 'm1' } as never
-    );
+    applySessionUpdate(SessionUpdateScope.Menu, {
+      userSession,
+      restaurantId: 'r1',
+      branchId: 'b1',
+      menuId: 'm1',
+    } as never);
+    applySessionUpdate(SessionUpdateScope.Menu, {
+      userSession,
+      restaurantId: 'r1',
+      branchId: 'b1',
+      menuId: 'm1',
+    } as never);
     expect(userSession.restaurants?.[0].branches[0].menus).toEqual(['m1']);
   });
 
@@ -100,6 +103,16 @@ describe('prismaErrors', () => {
     expect(isForeignKeyViolation(err, 'cylinders_menu_id_fkey')).toBe(true);
     expect(isForeignKeyViolation(err, 'menus_branch_id_fkey')).toBe(false);
     expect(isForeignKeyViolation(knownError('P2002'), 'cylinders_menu_id_fkey')).toBe(false);
+    expect(isForeignKeyViolation(err)).toBe(true);
+  });
+
+  test('P2003 matches Prisma 6 meta.constraint shape', () => {
+    const err = knownError('P2003', {
+      modelName: 'Branch',
+      constraint: 'branches_restaurant_id_fkey',
+    });
+    expect(isForeignKeyViolation(err, 'branches_restaurant_id_fkey')).toBe(true);
+    expect(isForeignKeyViolation(err, 'menus_branch_id_fkey')).toBe(false);
     expect(isForeignKeyViolation(err)).toBe(true);
   });
 });
@@ -138,9 +151,7 @@ describe('notFoundHandler', () => {
     const status = vi.fn().mockReturnValue({ json });
     notFoundHandler({ path: '/nope' } as never, { status } as never, (() => {}) as never);
     expect(status).toHaveBeenCalledWith(404);
-    expect(json).toHaveBeenCalledWith(
-      expect.objectContaining({ success: false })
-    );
+    expect(json).toHaveBeenCalledWith(expect.objectContaining({ success: false }));
   });
 });
 
@@ -179,7 +190,9 @@ describe('DashboardService.getDayItems (B1)', () => {
             branches: [
               {
                 menus: [
-                  { cylinders: [{ menuCategories: [menuCategory('c2', [item('high', 9, 'k1')])] }] },
+                  {
+                    cylinders: [{ menuCategories: [menuCategory('c2', [item('high', 9, 'k1')])] }],
+                  },
                 ],
               },
             ],
@@ -187,7 +200,10 @@ describe('DashboardService.getDayItems (B1)', () => {
         ],
       },
     } as never;
-    const s3 = { generateGetPresignedUrl: async (k: string | null) => (k ? `signed:${k}` : null) };
+    const s3 = {
+      generateGetPresignedUrl: async (k: string | null) => (k ? `signed:${k}` : null),
+      generatePutPresignedUrl: async (k: string) => `signed:${k}`,
+    };
 
     const items = await new DashboardService(mockPrisma, s3).getDayItems('u1');
     expect(items).toHaveLength(2);
@@ -204,7 +220,10 @@ describe('OrderService.createOrder (B3)', () => {
       order: { create: vi.fn() },
     };
     const prisma = { $transaction: async (fn: (t: typeof tx) => unknown) => fn(tx) } as never;
-    const s3 = { generateGetPresignedUrl: async () => null };
+    const s3 = {
+      generateGetPresignedUrl: async () => null,
+      generatePutPresignedUrl: async (k: string) => `signed:${k}`,
+    };
 
     await expect(
       new OrderService(prisma, s3).createOrder('a@b.c', 'm1', {
@@ -228,7 +247,10 @@ describe('OrderService.createOrder (B3)', () => {
       order: { create },
     };
     const prisma = { $transaction: async (fn: (t: typeof tx) => unknown) => fn(tx) } as never;
-    const s3 = { generateGetPresignedUrl: async (k: string | null) => (k ? `signed:${k}` : null) };
+    const s3 = {
+      generateGetPresignedUrl: async (k: string | null) => (k ? `signed:${k}` : null),
+      generatePutPresignedUrl: async (k: string) => `signed:${k}`,
+    };
 
     const order = await new OrderService(prisma, s3).createOrder('a@b.c', 'm1', {
       items: [{ itemId: 'i1', amount: 2 }],
@@ -253,7 +275,9 @@ describe('withUniqueRetry', () => {
   test('rethrows non-unique errors immediately', async () => {
     const boom = new Error('boom');
     await expect(
-      withUniqueRetry(async (): Promise<string> => { throw boom; })
+      withUniqueRetry(async (): Promise<string> => {
+        throw boom;
+      })
     ).rejects.toBe(boom);
   });
 
@@ -261,7 +285,10 @@ describe('withUniqueRetry', () => {
     const p2002 = knownError('P2002');
     let calls = 0;
     await expect(
-      withUniqueRetry(async (): Promise<string> => { calls++; throw p2002; }, 2)
+      withUniqueRetry(async (): Promise<string> => {
+        calls++;
+        throw p2002;
+      }, 2)
     ).rejects.toBe(p2002);
     expect(calls).toBe(2);
   });

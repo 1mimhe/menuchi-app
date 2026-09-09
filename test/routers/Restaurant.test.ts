@@ -1,24 +1,17 @@
-import { beforeAll, describe, expect, test, vi } from "vitest";
-import { returnAddress, returnBranch, returnOpeningTimes, returnRestaurant } from "../factories";
-import { RestaurantController } from "../../src/controllers/RestaurantController";
-import { BranchController } from "../../src/controllers/BranchController";
-import BaseController from "../../src/controllers/BaseController";
-import { randomUUID } from "crypto";
-import { RestaurantNotFound } from "../../src/exceptions/NotFoundError";
+import { beforeAll, describe, expect, test, vi } from 'vitest';
+import { returnRestaurant } from '../factories';
+import { RestaurantController } from '../../src/controllers/RestaurantController';
+import BaseController from '../../src/controllers/BaseController';
 
 beforeAll(() => {
   // Phase-1 tech debt: direct controller calls bypass HTTP auth.
   // Mock guard here; real enforcement is covered via HTTP in AuthZ.test.ts.
   // TODO(Phase-3): convert these to Supertest and drop this mock.
-  vi.spyOn(BaseController.prototype, "checkPermission").mockImplementation(() => {});
+  vi.spyOn(BaseController.prototype, 'checkPermission').mockImplementation(() => {});
 });
 
 const restaurantObject = returnRestaurant();
-const branchObject = returnBranch();
-const addressObject = returnAddress();
-const openingTimesObject = returnOpeningTimes();
 const restaurantController = new RestaurantController();
-const branchController = new BranchController();
 
 describe('POST /restaurants', () => {
   test('should create restaurant with a default branch and backlog successfully.', async () => {
@@ -41,7 +34,7 @@ describe('POST /restaurants', () => {
 //     await branchController.createOrUpdateAddress(branch.id, addressObject);
 //     await branchController.createOrUpdateOpeningTimes(branch.id, openingTimesObject);
 //     const promise = restaurantController.getRestaurant(restaurant.id);
-        
+
 //     await expect(promise).resolves.toMatchObject({
 //       ...restaurantObject,
 //       branches: [expect.objectContaining({
@@ -73,10 +66,10 @@ describe('PATCH /restaurants/{restaurantId}', () => {
       displayName: 'new-restaurant',
       slang: 'new-slang',
       instagram: 'new-id',
-      telegram:'new-id',
-      twitter:'new-id',
-      youtube:'new-id',
-      eitaa:'new-id'
+      telegram: 'new-id',
+      twitter: 'new-id',
+      youtube: 'new-id',
+      eitaa: 'new-id',
     };
     await restaurantController.updateRestaurant(restaurantId, newRestaurant);
     const promise = restaurantController.getRestaurant(restaurantId);

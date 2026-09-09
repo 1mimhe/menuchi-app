@@ -1,12 +1,12 @@
-import { describe, expect, test } from "vitest";
-import { returnCategoryName } from "../factories";
+import { describe, expect, test } from 'vitest';
+import { returnCategoryName } from '../factories';
 import { CategoryNameController } from '../../src/controllers/CategoryNameController';
-import { Prisma } from "@prisma/client";
+import { Prisma } from '@prisma/client';
 
 const categoryNameObject = returnCategoryName();
 const controller = new CategoryNameController();
 
-describe('POST /category-names', async () =>{
+describe('POST /category-names', async () => {
   test('should create category name successfully.', async () => {
     const promise = controller.createCategoryName(categoryNameObject);
     await expect(promise).resolves.toMatchObject({ name: categoryNameObject.name });
