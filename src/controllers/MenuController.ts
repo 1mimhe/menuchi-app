@@ -1,18 +1,52 @@
-import { Body, Delete, Get, Patch, Path, Post, Query, Request, Response, Route, Security, SuccessResponse, Tags } from "tsoa";
-import { DefaultString, UUID } from "../types/TypeAliases";
-import MenuService from "../services/MenuService";
-import { CylinderCompactIn, CreateCylinderCompleteOut, MenuCategoryCompactIn, CreateMenuCategoryCompleteOut, MenuCompactIn, MenuCompleteOut, MenuCompletePlusOut, CreateMenuCompactIn, MenuPreviewCompleteOut, MenuViewCompleteOut, CreateMenuCompleteOut, MenuCompleteWithCountsOut } from "../types/MenuTypes";
-import { CylinderValidationError, MenuCategoryValidationError, MenuValidationError } from "../exceptions/ValidationError";
-import { ConstraintsDatabaseError } from "../exceptions/DatabaseError";
-import MenuchiError from "../exceptions/MenuchiError";
-import { BranchNotFound, CategoryNotFound, CylinderNotFound, MenuNotFound } from "../exceptions/NotFoundError";
-import { BacklogCompleteOut } from "../types/RestaurantTypes";
-import { PermissionScope, RolesEnum, SessionUpdateScope } from "../types/Enums";
-import BaseController from "./BaseController";
+import {
+  Body,
+  Delete,
+  Get,
+  Patch,
+  Path,
+  Post,
+  Query,
+  Request,
+  Response,
+  Route,
+  Security,
+  SuccessResponse,
+  Tags,
+} from 'tsoa';
+import { DefaultString, UUID } from '../types/TypeAliases';
+import { resolveContainer } from '../container';
+import {
+  CylinderCompactIn,
+  CreateCylinderCompleteOut,
+  MenuCategoryCompactIn,
+  CreateMenuCategoryCompleteOut,
+  MenuCompactIn,
+  MenuCompletePlusOut,
+  CreateMenuCompactIn,
+  MenuPreviewCompleteOut,
+  MenuViewCompleteOut,
+  CreateMenuCompleteOut,
+  MenuCompleteWithCountsOut,
+} from '../types/MenuTypes';
+import {
+  CylinderValidationError,
+  MenuCategoryValidationError,
+  MenuValidationError,
+} from '../exceptions/ValidationError';
+import { ConstraintsDatabaseError } from '../exceptions/DatabaseError';
+import MenuchiError from '../exceptions/MenuchiError';
+import {
+  BranchNotFound,
+  CategoryNotFound,
+  CylinderNotFound,
+  MenuNotFound,
+} from '../exceptions/NotFoundError';
+import { BacklogCompleteOut } from '../types/RestaurantTypes';
+import { PermissionScope, RolesEnum, SessionUpdateScope } from '../types/Enums';
+import BaseController from './BaseController';
 import express from 'express';
-import { ForbiddenError, UnauthorizedError } from "../exceptions/AuthError";
-import { MenuUpdateSession } from "../types/AuthTypes";
-import { ItemCompleteOut } from "../types/ItemTypes";
+import { ForbiddenError, UnauthorizedError } from '../exceptions/AuthError';
+import { MenuUpdateSession } from '../types/AuthTypes';
 
 @Route('/menus')
 @Tags('Menu')
@@ -32,7 +66,7 @@ export class MenuController extends BaseController {
     @Request() req?: express.Request
   ): Promise<BacklogCompleteOut> {
     this.checkPermission(req?.session.user, PermissionScope.Backlog, backlogId);
-    return MenuService.getBacklog(backlogId, search);
+    return resolveContainer(req).menu.getBacklog(backlogId, search);
   }
 
   /**
@@ -49,13 +83,13 @@ export class MenuController extends BaseController {
     @Request() req?: express.Request
   ): Promise<CreateMenuCompleteOut> {
     this.checkPermission(req?.session.user, PermissionScope.Branch, body.branchId);
-    const { restaurantId, ...menu} = await MenuService.createMenu(body);
+    const { restaurantId, ...menu } = await resolveContainer(req).menu.createMenu(body);
 
     const updateSession = {
       userSession: req?.session.user,
       restaurantId: restaurantId,
       branchId: menu.branchId,
-      menuId: menu.id
+      menuId: menu.id,
     } as MenuUpdateSession;
     this.updateSession(SessionUpdateScope.Menu, updateSession);
 
@@ -75,7 +109,7 @@ export class MenuController extends BaseController {
     @Request() req?: express.Request
   ): Promise<MenuCompleteWithCountsOut[]> {
     this.checkPermission(req?.session.user, PermissionScope.Branch, branchId);
-    return MenuService.getAllMenus(branchId);
+    return resolveContainer(req).menu.getAllMenus(branchId);
   }
 
   /**
@@ -92,7 +126,7 @@ export class MenuController extends BaseController {
     @Request() req?: express.Request
   ): Promise<MenuCompletePlusOut> {
     this.checkPermission(req?.session.user, PermissionScope.Menu, menuId);
-    return MenuService.getMenu(menuId);
+    return resolveContainer(req).menu.getMenu(menuId);
   }
 
   /**
@@ -111,7 +145,7 @@ export class MenuController extends BaseController {
     @Request() req?: express.Request
   ): Promise<null> {
     this.checkPermission(req?.session.user, PermissionScope.Menu, menuId);
-    await MenuService.updateMenu(menuId, body);
+    await resolveContainer(req).menu.updateMenu(menuId, body);
     return null;
   }
 
@@ -123,7 +157,10 @@ export class MenuController extends BaseController {
   @Response<CylinderNotFound>(404, '4046 CylinderNotFound')
   @Response<CategoryNotFound>(404, '40412 CategoryNotFound')
   @Response<MenuNotFound>(404, '4048 MenuNotFound')
-  @Response<ConstraintsDatabaseError>(409, 'ConstraintsDatabaseError -> A cylinder with the same provided days are already exists.')
+  @Response<ConstraintsDatabaseError>(
+    409,
+    'ConstraintsDatabaseError -> A cylinder with the same provided days are already exists.'
+  )
   @Response<CylinderValidationError>(422, '4226 CylinderValidationError')
   @SuccessResponse(201, 'Cylinder created successfully.')
   @Security('', [RolesEnum.RestaurantOwner])
@@ -135,10 +172,10 @@ export class MenuController extends BaseController {
   ): Promise<CreateCylinderCompleteOut> {
     this.checkPermission(req?.session.user, PermissionScope.Menu, menuId);
 
-    const isValid = Object.values(body).some(value => value);
+    const isValid = Object.values(body).some((value) => value);
     if (!isValid) throw new CylinderValidationError();
 
-    return MenuService.createCylinder(menuId, body);
+    return resolveContainer(req).menu.createCylinder(menuId, body);
   }
 
   /**
@@ -156,7 +193,7 @@ export class MenuController extends BaseController {
     @Request() req?: express.Request
   ): Promise<null> {
     this.checkPermission(req?.session.user, PermissionScope.Menu, menuId);
-    await MenuService.reorderCylinders(menuId, body);
+    await resolveContainer(req).menu.reorderCylinders(menuId, body);
     return null;
   }
 
@@ -168,7 +205,10 @@ export class MenuController extends BaseController {
   @Response<CylinderNotFound>(404, '4046 CylinderNotFound')
   @Response<MenuNotFound>(404, '4048 MenuNotFound')
   @Response<MenuchiError>(400, 'All item IDs must belong to the specified category.')
-  @Response<ConstraintsDatabaseError>(409, 'ConstraintsDatabaseError -> A menu category with the same name already exists within the specified cylinder.')
+  @Response<ConstraintsDatabaseError>(
+    409,
+    'ConstraintsDatabaseError -> A menu category with the same name already exists within the specified cylinder.'
+  )
   @Response<MenuCategoryValidationError>(422, '4227 MenuCategoryValidationError')
   @SuccessResponse(201, 'Menu Category created successfully.')
   @Security('', [RolesEnum.RestaurantOwner])
@@ -182,7 +222,7 @@ export class MenuController extends BaseController {
 
     if (body.items.length < 1) throw new MenuCategoryValidationError();
 
-    return MenuService.createMenuCategory(menuId, body);
+    return resolveContainer(req).menu.createMenuCategory(menuId, body);
   }
 
   /**
@@ -201,7 +241,7 @@ export class MenuController extends BaseController {
     @Request() req?: express.Request
   ): Promise<null> {
     this.checkPermission(req?.session.user, PermissionScope.Menu, menuId);
-    await MenuService.reorderMenuItems(menuId, body);
+    await resolveContainer(req).menu.reorderMenuItems(menuId, body);
     return null;
   }
 
@@ -212,14 +252,14 @@ export class MenuController extends BaseController {
   @Response<UnauthorizedError>(401, 'Unauthorized user.')
   @SuccessResponse(204, 'Menu Categories deleted successfully.')
   @Security('', [RolesEnum.RestaurantOwner])
-  @Delete('/{menuId}/categories') 
+  @Delete('/{menuId}/categories')
   async deleteMenuCategory(
     @Path() menuId: UUID,
     @Body() body: UUID[],
     @Request() req: express.Request
   ): Promise<null> {
     this.checkPermission(req.session.user, PermissionScope.Menu, menuId);
-    await MenuService.deleteMenuCategory(menuId, body);
+    await resolveContainer(req).menu.deleteMenuCategory(menuId, body);
     return null;
   }
 
@@ -238,7 +278,7 @@ export class MenuController extends BaseController {
     @Request() req?: express.Request
   ): Promise<null> {
     this.checkPermission(req?.session.user, PermissionScope.Menu, menuId);
-    await MenuService.reorderMenuCategories(menuId, body);
+    await resolveContainer(req).menu.reorderMenuCategories(menuId, body);
     return null;
   }
 
@@ -257,7 +297,7 @@ export class MenuController extends BaseController {
     @Request() req?: express.Request
   ): Promise<null> {
     this.checkPermission(req?.session.user, PermissionScope.Menu, menuId);
-    await MenuService.hideMenuItem(menuId, menuItemId, !isHide);
+    await resolveContainer(req).menu.hideMenuItem(menuId, menuItemId, !isHide);
     return null;
   }
 
@@ -268,14 +308,14 @@ export class MenuController extends BaseController {
   @Response<UnauthorizedError>(401, 'Unauthorized user.')
   @SuccessResponse(204, 'Menu Items deleted successfully.')
   @Security('', [RolesEnum.RestaurantOwner])
-  @Delete('/{menuId}/items') 
+  @Delete('/{menuId}/items')
   async deleteMenuItems(
     @Path() menuId: UUID,
     @Body() body: UUID[],
     @Request() req?: express.Request
   ): Promise<null> {
     this.checkPermission(req?.session.user, PermissionScope.Menu, menuId);
-    await MenuService.deleteMenuItems(menuId, body);
+    await resolveContainer(req).menu.deleteMenuItems(menuId, body);
     return null;
   }
 
@@ -286,13 +326,10 @@ export class MenuController extends BaseController {
   @Response<UnauthorizedError>(401, 'Unauthorized user.')
   @SuccessResponse(204, 'Menu deleted successfully.')
   @Security('', [RolesEnum.RestaurantOwner])
-  @Delete('/{menuId}') 
-  async deleteMenu(
-    @Path() menuId: UUID,
-    @Request() req?: express.Request
-  ): Promise<null> {
+  @Delete('/{menuId}')
+  async deleteMenu(@Path() menuId: UUID, @Request() req?: express.Request): Promise<null> {
     this.checkPermission(req?.session.user, PermissionScope.Menu, menuId);
-    await MenuService.deleteMenu(menuId);
+    await resolveContainer(req).menu.deleteMenu(menuId);
     return null;
   }
 
@@ -310,12 +347,12 @@ export class MenuController extends BaseController {
     @Request() req: express.Request
   ): Promise<MenuPreviewCompleteOut> {
     this.checkPermission(req.session.user, PermissionScope.Menu, menuId);
-    return MenuService.getMenuPreview(menuId);
+    return resolveContainer(req).menu.getMenuPreview(menuId);
   }
 
   /**
    * Retrieves a menu preview by its id for customer.
-   * 
+   *
    * Publicly accessible. No authentication required.
    */
   @Response<ForbiddenError>(403, 'Access Denied. You are not authorized to perform this action.')
@@ -324,6 +361,6 @@ export class MenuController extends BaseController {
   @SuccessResponse(200, 'Menu preview is retrieved successfully.')
   @Get('/{menuId}/view')
   public async getCustomerMenuPreview(@Path() menuId: UUID): Promise<MenuViewCompleteOut> {
-    return MenuService.getMenuView(menuId);
+    return resolveContainer().menu.getMenuView(menuId);
   }
 }

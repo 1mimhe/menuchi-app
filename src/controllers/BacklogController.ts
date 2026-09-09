@@ -1,17 +1,39 @@
-import { Body, Delete, Get, Patch, Path, Post, Request, Response, Route, Security, SuccessResponse, Tags } from "tsoa";
-import { UpdateItemIn, ItemCompactIn, ItemCompleteOut, CreateItemCompleteOut } from "../types/ItemTypes";
-import BacklogService from "../services/BacklogService";
-import { UUID } from "../types/TypeAliases";
-import { BacklogCompleteOut } from "../types/RestaurantTypes";
-import { ItemValidationError } from "../exceptions/ValidationError";
-import { BacklogNotFound, CategoryNameNotFound } from "../exceptions/NotFoundError";
-import BaseController from "./BaseController";
+import {
+  Body,
+  Delete,
+  Get,
+  Patch,
+  Path,
+  Post,
+  Request,
+  Response,
+  Route,
+  Security,
+  SuccessResponse,
+  Tags,
+} from 'tsoa';
+import {
+  UpdateItemIn,
+  ItemCompactIn,
+  ItemCompleteOut,
+  CreateItemCompleteOut,
+} from '../types/ItemTypes';
+import { resolveContainer } from '../container';
+import { UUID } from '../types/TypeAliases';
+import { BacklogCompleteOut } from '../types/RestaurantTypes';
+import { ItemValidationError } from '../exceptions/ValidationError';
+import { BacklogNotFound, CategoryNameNotFound } from '../exceptions/NotFoundError';
+import BaseController from './BaseController';
 import express from 'express';
-import { PermissionScope, RolesEnum, SyncOperations } from "../types/Enums";
-import { ForbiddenError, UnauthorizedError } from "../exceptions/AuthError";
-import MenuchiError from "../exceptions/MenuchiError";
-import { CategoryCompactOut, CategoryNameCompleteOut, CreateCategoryCompactIn } from "../types/CategoryTypes";
-import { ConstraintsDatabaseError } from "../exceptions/DatabaseError";
+import { PermissionScope, RolesEnum, SyncOperations } from '../types/Enums';
+import { ForbiddenError, UnauthorizedError } from '../exceptions/AuthError';
+import MenuchiError from '../exceptions/MenuchiError';
+import {
+  CategoryCompactOut,
+  CategoryNameCompleteOut,
+  CreateCategoryCompactIn,
+} from '../types/CategoryTypes';
+import { ConstraintsDatabaseError } from '../exceptions/DatabaseError';
 
 @Route('/backlog')
 @Tags('Backlog')
@@ -34,7 +56,7 @@ export class BacklogController extends BaseController {
   ): Promise<CreateItemCompleteOut> {
     this.checkPermission(req?.session.user, PermissionScope.Backlog, backlogId);
 
-    const item = await BacklogService.createItem(backlogId, body);
+    const item = await resolveContainer(req).backlog.createItem(backlogId, body);
     await this.publish(undefined, item.picKey!, SyncOperations.Created);
 
     return item;
@@ -49,9 +71,12 @@ export class BacklogController extends BaseController {
   @SuccessResponse(200, 'Backlog is retrieved successfully.')
   @Security('', [RolesEnum.RestaurantOwner])
   @Get('/{backlogId}')
-  public async getBacklog(@Path() backlogId: UUID, @Request() req?: express.Request): Promise<BacklogCompleteOut> {
+  public async getBacklog(
+    @Path() backlogId: UUID,
+    @Request() req?: express.Request
+  ): Promise<BacklogCompleteOut> {
     this.checkPermission(req?.session.user, PermissionScope.Backlog, backlogId);
-    return BacklogService.getBacklog(backlogId);
+    return resolveContainer(req).backlog.getBacklog(backlogId);
   }
 
   /**
@@ -63,9 +88,12 @@ export class BacklogController extends BaseController {
   @SuccessResponse(200, 'All backlog items retrieved successfully.')
   @Security('', [RolesEnum.RestaurantOwner])
   @Get('/{backlogId}/items')
-  public async getItems(@Path() backlogId: UUID, @Request() req?: express.Request): Promise<ItemCompleteOut[]> {
+  public async getItems(
+    @Path() backlogId: UUID,
+    @Request() req?: express.Request
+  ): Promise<ItemCompleteOut[]> {
     this.checkPermission(req?.session.user, PermissionScope.Backlog, backlogId);
-    return BacklogService.getItems(backlogId);
+    return resolveContainer(req).backlog.getItems(backlogId);
   }
 
   /**
@@ -74,7 +102,7 @@ export class BacklogController extends BaseController {
   @Response<ForbiddenError>(403, 'Access Denied. You are not authorized to perform this action.')
   @Response<UnauthorizedError>(401, 'Unauthorized user.')
   @Response<ItemValidationError>(422, '4223 ItemValidationError')
-  @SuccessResponse(204, 'Item updated successfully. It doesn\'t retrieve anything.')
+  @SuccessResponse(204, "Item updated successfully. It doesn't retrieve anything.")
   @Security('', [RolesEnum.RestaurantOwner])
   @Patch('/{backlogId}/items/{itemId}')
   public async updateItem(
@@ -84,7 +112,7 @@ export class BacklogController extends BaseController {
     @Request() req?: express.Request
   ): Promise<null> {
     this.checkPermission(req?.session.user, PermissionScope.Backlog, backlogId);
-    await BacklogService.updateItem(backlogId, itemId, body);
+    await resolveContainer(req).backlog.updateItem(backlogId, itemId, body);
     return null;
   }
 
@@ -104,7 +132,7 @@ export class BacklogController extends BaseController {
     @Request() req?: express.Request
   ): Promise<null> {
     this.checkPermission(req?.session.user, PermissionScope.Backlog, backlogId);
-    await BacklogService.reorderItemsInCategory(backlogId, body);
+    await resolveContainer(req).backlog.reorderItemsInCategory(backlogId, body);
     return null;
   }
 
@@ -123,7 +151,7 @@ export class BacklogController extends BaseController {
     @Request() req?: express.Request
   ): Promise<null> {
     this.checkPermission(req?.session.user, PermissionScope.Backlog, backlogId);
-    await BacklogService.reorderItemsInList(backlogId, body);
+    await resolveContainer(req).backlog.reorderItemsInList(backlogId, body);
     return null;
   }
 
@@ -132,7 +160,7 @@ export class BacklogController extends BaseController {
    */
   @Response<ForbiddenError>(403, 'Access Denied. You are not authorized to perform this action.')
   @Response<UnauthorizedError>(401, 'Unauthorized user.')
-  @SuccessResponse(204, 'Items deleted successfully. It doesn\'t retrieve anything.')
+  @SuccessResponse(204, "Items deleted successfully. It doesn't retrieve anything.")
   @Security('', [RolesEnum.RestaurantOwner])
   @Delete('/{backlogId}/items')
   public async deleteItems(
@@ -141,7 +169,7 @@ export class BacklogController extends BaseController {
     @Request() req?: express.Request
   ): Promise<null> {
     this.checkPermission(req?.session.user, PermissionScope.Backlog, backlogId);
-    await BacklogService.deleteItems(backlogId, body);
+    await resolveContainer(req).backlog.deleteItems(backlogId, body);
     return null;
   }
 
@@ -150,7 +178,10 @@ export class BacklogController extends BaseController {
    */
   @Response<ForbiddenError>(403, 'Access Denied. You are not authorized to perform this action.')
   @Response<UnauthorizedError>(401, 'Unauthorized user.')
-  @Response<ConstraintsDatabaseError>(409, 'ConstraintsDatabaseError -> This category name is already used in this backlog.')
+  @Response<ConstraintsDatabaseError>(
+    409,
+    'ConstraintsDatabaseError -> This category name is already used in this backlog.'
+  )
   @Security('', [RolesEnum.RestaurantOwner])
   @SuccessResponse(201, 'Category created successfully.')
   @Post('/{backlogId}/categories')
@@ -160,7 +191,7 @@ export class BacklogController extends BaseController {
     @Request() req?: express.Request
   ): Promise<CategoryCompactOut> {
     this.checkPermission(req?.session.user, PermissionScope.Backlog, backlogId);
-    return BacklogService.createCategory(backlogId, body);
+    return resolveContainer(req).backlog.createCategory(backlogId, body);
   }
 
   /**
@@ -178,7 +209,7 @@ export class BacklogController extends BaseController {
     @Request() req?: express.Request
   ): Promise<null> {
     this.checkPermission(req?.session.user, PermissionScope.Backlog, backlogId);
-    await BacklogService.reorderCategoriesInBacklog(backlogId, body);
+    await resolveContainer(req).backlog.reorderCategoriesInBacklog(backlogId, body);
     return null;
   }
 
@@ -187,7 +218,10 @@ export class BacklogController extends BaseController {
    */
   @Response<ForbiddenError>(403, 'Access Denied. You are not authorized to perform this action.')
   @Response<UnauthorizedError>(401, 'Unauthorized user.')
-  @SuccessResponse(204, 'Category and its items deleted successfully.  It doesn\'t retrieve anything.')
+  @SuccessResponse(
+    204,
+    "Category and its items deleted successfully.  It doesn't retrieve anything."
+  )
   @Security('', [RolesEnum.RestaurantOwner])
   @Delete('/{backlogId}/categories/{categoryId}')
   public async deleteCategory(
@@ -196,7 +230,7 @@ export class BacklogController extends BaseController {
     @Request() req?: express.Request
   ): Promise<null> {
     this.checkPermission(req?.session.user, PermissionScope.Backlog, backlogId);
-    await BacklogService.deleteCategory(backlogId, categoryId);
+    await resolveContainer(req).backlog.deleteCategory(backlogId, categoryId);
     return null;
   }
 
@@ -213,6 +247,6 @@ export class BacklogController extends BaseController {
     @Request() req?: express.Request
   ): Promise<CategoryNameCompleteOut[]> {
     this.checkPermission(req?.session.user, PermissionScope.Backlog, backlogId);
-    return BacklogService.getAllCategoryNames(backlogId);
+    return resolveContainer(req).backlog.getAllCategoryNames(backlogId);
   }
 }

@@ -1,4 +1,4 @@
-import { ImageFilename, LongString, URL, UUID } from "./TypeAliases";
+import { ImageFilename, LongString, URL, UUID } from './TypeAliases';
 
 export interface GetItemPicUrlIn {
   restaurantId: UUID;

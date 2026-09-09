@@ -30,9 +30,7 @@ describe('POST /auth/res-signup', () => {
 describe('POST /auth/res-signin', () => {
   test('should signin successfully with 200 status code.', async () => {
     await request.post('/auth/res-signup').send(userObject);
-    const res = await request
-      .post('/auth/res-signin')
-      .send({ phoneNumber, password });
+    const res = await request.post('/auth/res-signin').send({ phoneNumber, password });
 
     expect(res.status).toBe(200);
     expect(res.body).toBe(true);

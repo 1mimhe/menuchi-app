@@ -3,10 +3,21 @@ import { SessionUpdate, UserSession } from '../types/AuthTypes';
 import { UUID } from '../types/TypeAliases';
 import { PermissionScope, SessionUpdateScope, SyncOperations } from '../types/Enums';
 import { ForbiddenError } from '../exceptions/AuthError';
-import TransformersRedisClient from '../config/TransformersRedisClient';
+import { getTransformersRedisClient } from '../config/TransformersRedisClient';
 import { canAccess } from '../auth/permissionGuard';
 import { applySessionUpdate } from '../auth/sessionSync';
 import { publishImageEvent } from '../events/imageEvents';
+
+function resolveStreamName(explicit?: string): string {
+  if (explicit) return explicit;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getEnv } = require('../config/env') as typeof import('../config/env');
+    return getEnv().TRANSFORMERS_STREAM;
+  } catch {
+    return process.env.TRANSFORMERS_STREAM as string;
+  }
+}
 
 /**
  * Thin TSOA compatibility facade.
@@ -27,10 +38,17 @@ export default class BaseController extends Controller {
   }
 
   async publish(
-    streamName = process.env.TRANSFORMERS_STREAM!,
+    streamName?: string,
     key?: string | null,
     operation?: SyncOperations,
-    oldKey?: string | null) {
-      await publishImageEvent(TransformersRedisClient, streamName, key, operation, oldKey);
+    oldKey?: string | null
+  ) {
+    await publishImageEvent(
+      getTransformersRedisClient(),
+      resolveStreamName(streamName),
+      key,
+      operation,
+      oldKey
+    );
   }
 }

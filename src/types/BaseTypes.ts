@@ -1,4 +1,4 @@
-import { UUID } from "./TypeAliases";
+import { UUID } from './TypeAliases';
 
 export interface CompleteOut {
   id: UUID;

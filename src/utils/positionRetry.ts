@@ -13,10 +13,7 @@ export async function withUniqueRetry<T>(fn: () => Promise<T>, attempts = 3): Pr
     try {
       return await fn();
     } catch (error) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === 'P2002'
-      ) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         lastError = error;
         continue;
       }

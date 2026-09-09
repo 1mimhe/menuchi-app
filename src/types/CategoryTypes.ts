@@ -1,6 +1,6 @@
-import { CompleteOut } from "./BaseTypes";
-import { DefaultString, Int, UUID } from "./TypeAliases";
-import { ItemCompleteOut } from "./ItemTypes";
+import { CompleteOut } from './BaseTypes';
+import { DefaultString, Int, UUID } from './TypeAliases';
+import { ItemCompleteOut } from './ItemTypes';
 
 export interface CategoryNameCompactIn {
   name: DefaultString;

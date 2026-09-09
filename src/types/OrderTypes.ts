@@ -1,7 +1,6 @@
-import { CompleteOut } from "./BaseTypes";
-import { OrderStatus } from "./Enums";
-import { DefaultString, Email, Int, URL, UUID } from "./TypeAliases";
-
+import { CompleteOut } from './BaseTypes';
+import { OrderStatus } from './Enums';
+import { DefaultString, Email, Int, URL, UUID } from './TypeAliases';
 
 export interface CreateOrderCompactIn {
   items: OrderItemCompactIn[];

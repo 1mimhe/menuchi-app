@@ -1,12 +1,30 @@
-import { Body, Post, Request, Response, Route, Security, SuccessResponse, Tags } from "tsoa";
-import S3Service from "../services/S3Service";
-import { GetItemPicUrlIn, GetItemPicUrlOut, GetMenuFaviconUrlIn, GetMenuFaviconUrlOut, GetRestaurantAvatarPicUrlOut, GetRestaurantCoverPicUrlOut, GetRestaurantLogoPicUrlOut, GetRestaurantPicUrlIn } from "../types/S3Types";
-import { S3ValidationError } from "../exceptions/ValidationError";
-import BaseController from "./BaseController";
-import { PermissionScope, RolesEnum } from "../types/Enums";
+import { Body, Post, Request, Response, Route, Security, SuccessResponse, Tags } from 'tsoa';
+import {
+  GetItemPicUrlIn,
+  GetItemPicUrlOut,
+  GetMenuFaviconUrlIn,
+  GetMenuFaviconUrlOut,
+  GetRestaurantAvatarPicUrlOut,
+  GetRestaurantCoverPicUrlOut,
+  GetRestaurantLogoPicUrlOut,
+  GetRestaurantPicUrlIn,
+} from '../types/S3Types';
+import { S3ValidationError } from '../exceptions/ValidationError';
+import BaseController from './BaseController';
+import { PermissionScope, RolesEnum } from '../types/Enums';
 import express from 'express';
-import { ForbiddenError, UnauthorizedError } from "../exceptions/AuthError";
-import prismaClient from "../db/prisma";
+import { ForbiddenError, UnauthorizedError } from '../exceptions/AuthError';
+import { resolveContainer } from '../container';
+
+function readBucket(): string {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getEnv } = require('../config/env') as typeof import('../config/env');
+    return getEnv().S3_BUCKETNAME;
+  } catch {
+    return process.env.S3_BUCKETNAME as string;
+  }
+}
 
 @Route('/s3')
 @Tags('S3')
@@ -25,12 +43,13 @@ export class S3Controller extends BaseController {
     @Request() req: express.Request
   ): Promise<GetItemPicUrlOut> {
     const { restaurantId, branchId, fileName } = body;
-    const bucketName = process.env.S3_BUCKETNAME;
+    const bucketName = readBucket();
+    const container = resolveContainer(req);
 
     this.checkPermission(req.session.user, PermissionScope.Branch, branchId);
 
     // Never trust client restaurantId for key prefix — resolve server-side.
-    const branch = await prismaClient.branch.findUnique({
+    const branch = await container.prisma.branch.findUnique({
       where: { id: branchId },
       select: { restaurantId: true },
     });
@@ -39,10 +58,10 @@ export class S3Controller extends BaseController {
     }
 
     const itemPicKey = `${bucketName}/Restaurants/${restaurantId}/Items/${branchId}/${fileName}`;
-    const itemPicUrl = await S3Service.generatePutPresignedUrl(itemPicKey);
+    const itemPicUrl = await container.s3.generatePutPresignedUrl(itemPicKey);
     return {
       itemPicUrl,
-      itemPicKey
+      itemPicKey,
     };
   }
 
@@ -60,15 +79,16 @@ export class S3Controller extends BaseController {
     @Request() req: express.Request
   ): Promise<GetRestaurantCoverPicUrlOut> {
     const { restaurantId, fileName } = body;
-    const bucketName = process.env.S3_BUCKETNAME;
+    const bucketName = readBucket();
+    const container = resolveContainer(req);
 
     this.checkPermission(req.session.user, PermissionScope.Restaurant, restaurantId);
 
     const restaurantCoverPicKey = `${bucketName}/Restaurants/${restaurantId}/Cover-${fileName}`;
-    const restaurantCoverPicUrl = await S3Service.generatePutPresignedUrl(restaurantCoverPicKey);
+    const restaurantCoverPicUrl = await container.s3.generatePutPresignedUrl(restaurantCoverPicKey);
     return {
       restaurantCoverPicUrl,
-      restaurantCoverPicKey
+      restaurantCoverPicKey,
     };
   }
 
@@ -86,15 +106,17 @@ export class S3Controller extends BaseController {
     @Request() req: express.Request
   ): Promise<GetRestaurantAvatarPicUrlOut> {
     const { restaurantId, fileName } = body;
-    const bucketName = process.env.S3_BUCKETNAME;
+    const bucketName = readBucket();
+    const container = resolveContainer(req);
 
     this.checkPermission(req.session.user, PermissionScope.Restaurant, restaurantId);
 
     const restaurantAvatarPicKey = `${bucketName}/Restaurants/${restaurantId}/Avatar-${fileName}`;
-    const restaurantAvatarPicUrl = await S3Service.generatePutPresignedUrl(restaurantAvatarPicKey);
+    const restaurantAvatarPicUrl =
+      await container.s3.generatePutPresignedUrl(restaurantAvatarPicKey);
     return {
       restaurantAvatarPicUrl,
-      restaurantAvatarPicKey
+      restaurantAvatarPicKey,
     };
   }
 
@@ -112,15 +134,16 @@ export class S3Controller extends BaseController {
     @Request() req: express.Request
   ): Promise<GetRestaurantLogoPicUrlOut> {
     const { restaurantId, fileName } = body;
-    const bucketName = process.env.S3_BUCKETNAME;
+    const bucketName = readBucket();
+    const container = resolveContainer(req);
 
     this.checkPermission(req.session.user, PermissionScope.Restaurant, restaurantId);
 
     const restaurantLogoPicKey = `${bucketName}/Restaurants/${restaurantId}/Logo-${fileName}`;
-    const restaurantLogoPicUrl = await S3Service.generatePutPresignedUrl(restaurantLogoPicKey);
+    const restaurantLogoPicUrl = await container.s3.generatePutPresignedUrl(restaurantLogoPicKey);
     return {
       restaurantLogoPicUrl,
-      restaurantLogoPicKey
+      restaurantLogoPicKey,
     };
   }
 
@@ -138,12 +161,13 @@ export class S3Controller extends BaseController {
     @Request() req: express.Request
   ): Promise<GetMenuFaviconUrlOut> {
     const { restaurantId, menuId, fileName } = body;
-    const bucketName = process.env.S3_BUCKETNAME;
+    const bucketName = readBucket();
+    const container = resolveContainer(req);
 
     this.checkPermission(req.session.user, PermissionScope.Menu, menuId);
 
     // Never trust client restaurantId for key prefix — resolve via menu -> branch.
-    const menu = await prismaClient.menu.findUnique({
+    const menu = await container.prisma.menu.findUnique({
       where: { id: menuId },
       select: { branch: { select: { restaurantId: true } } },
     });
@@ -152,10 +176,10 @@ export class S3Controller extends BaseController {
     }
 
     const menuFaviconKey = `${bucketName}/Restaurants/${restaurantId}/Menus/${menuId}/Favicon-${fileName}`;
-    const menuFaviconUrl = await S3Service.generatePutPresignedUrl(menuFaviconKey);
+    const menuFaviconUrl = await container.s3.generatePutPresignedUrl(menuFaviconKey);
     return {
       menuFaviconUrl,
-      menuFaviconKey
+      menuFaviconKey,
     };
   }
 }

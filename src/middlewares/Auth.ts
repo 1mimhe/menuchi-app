@@ -21,7 +21,15 @@ export async function expressAuthentication(
 
   let payload: JWTPayload;
   try {
-    payload = jwt.verify(accessToken, process.env.JWT_PRIVATE_KEY!) as JWTPayload;
+    let secret: string;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { getEnv } = require('../config/env') as typeof import('../config/env');
+      secret = getEnv().JWT_PRIVATE_KEY;
+    } catch {
+      secret = process.env.JWT_PRIVATE_KEY as string;
+    }
+    payload = jwt.verify(accessToken, secret) as JWTPayload;
   } catch {
     throw new InvalidTokenError();
   }
@@ -31,9 +39,7 @@ export async function expressAuthentication(
   }
 
   if (scopes?.length) {
-    const hasAccess = scopes.some((scope) =>
-      payload.roles?.includes(scope as RolesEnum)
-    );
+    const hasAccess = scopes.some((scope) => payload.roles?.includes(scope as RolesEnum));
     if (!hasAccess) throw new ForbiddenError();
   }
 

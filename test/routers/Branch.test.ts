@@ -1,17 +1,17 @@
-import { beforeAll, describe, expect, test, vi } from "vitest";
-import { returnAddress, returnBranch, returnOpeningTimes, returnRestaurant } from "../factories";
-import { RestaurantController } from "../../src/controllers/RestaurantController";
-import { BranchController } from "../../src/controllers/BranchController";
-import BaseController from "../../src/controllers/BaseController";
-import { BranchNotFound, RestaurantNotFound } from "../../src/exceptions/NotFoundError";
-import { randomUUID } from "crypto";
-import { Prisma } from "@prisma/client";
+import { beforeAll, describe, expect, test, vi } from 'vitest';
+import { returnAddress, returnBranch, returnOpeningTimes, returnRestaurant } from '../factories';
+import { RestaurantController } from '../../src/controllers/RestaurantController';
+import { BranchController } from '../../src/controllers/BranchController';
+import BaseController from '../../src/controllers/BaseController';
+import { BranchNotFound, RestaurantNotFound } from '../../src/exceptions/NotFoundError';
+import { randomUUID } from 'crypto';
+import { Prisma } from '@prisma/client';
 
 beforeAll(() => {
   // Phase-1 tech debt: direct controller calls bypass HTTP auth.
   // Mock guard here; real enforcement is covered via HTTP in AuthZ.test.ts.
   // TODO(Phase-3): convert these to Supertest and drop this mock.
-  vi.spyOn(BaseController.prototype, "checkPermission").mockImplementation(() => {});
+  vi.spyOn(BaseController.prototype, 'checkPermission').mockImplementation(() => {});
 });
 
 const restaurantObject = returnRestaurant();
@@ -49,11 +49,16 @@ describe('GET /branches/{branchId}', () => {
     const { id: restaurantId } = await restaurantController.createRestaurant(restaurantObject);
     const branch = await branchController.createBranch({ restaurantId, ...branchObject });
     const address = await branchController.createOrUpdateAddress(branch.id, addressObject);
-    const openingTimes = await branchController.createOrUpdateOpeningTimes(branch.id, openingTimesObject);
+    const openingTimes = await branchController.createOrUpdateOpeningTimes(
+      branch.id,
+      openingTimesObject
+    );
     const promise = branchController.getBranch(branch.id);
 
     await expect(promise).resolves.toMatchObject({
-      ...branch, address, openingTimes
+      ...branch,
+      address,
+      openingTimes,
     });
   });
 
@@ -76,10 +81,10 @@ describe('PATCH /branches', () => {
       status: 'new-status',
       showRating: true,
       instagram: 'new-id',
-      telegram:'new-id',
-      twitter:'new-id',
-      youtube:'new-id',
-      eitaa:'new-id'
+      telegram: 'new-id',
+      twitter: 'new-id',
+      youtube: 'new-id',
+      eitaa: 'new-id',
     };
     await branchController.updateBranch(branchId, newBranch);
     const promise = branchController.getBranch(branchId);
@@ -87,7 +92,7 @@ describe('PATCH /branches', () => {
     await expect(promise).resolves.toMatchObject(newBranch);
   });
 
-    test('should rejects updates branch with constraint error.', async () => {
+  test('should rejects updates branch with constraint error.', async () => {
     const { id: restaurantId } = await restaurantController.createRestaurant(restaurantObject);
     await branchController.createBranch({ restaurantId, ...branchObject });
     const newBranch = {
@@ -96,13 +101,15 @@ describe('PATCH /branches', () => {
       status: 'new-status',
       showRating: true,
       instagram: 'new-id',
-      telegram:'new-id',
-      twitter:'new-id',
-      youtube:'new-id',
-      eitaa:'new-id'
+      telegram: 'new-id',
+      twitter: 'new-id',
+      youtube: 'new-id',
+      eitaa: 'new-id',
     };
     const { id: branchId } = await branchController.createBranch({ restaurantId, ...newBranch });
-    const promise = branchController.updateBranch(branchId, { displayName: branchObject.displayName });
+    const promise = branchController.updateBranch(branchId, {
+      displayName: branchObject.displayName,
+    });
 
     await expect(promise).rejects.toThrowError(Prisma.PrismaClientKnownRequestError);
   });

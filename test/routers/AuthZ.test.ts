@@ -1,7 +1,7 @@
-import { describe, expect, test } from "vitest";
-import supertest from "supertest";
-import { randomUUID } from "crypto";
-import createServer from "../../src/server";
+import { describe, expect, test } from 'vitest';
+import supertest from 'supertest';
+import { randomUUID } from 'crypto';
+import createServer from '../../src/server';
 
 // NOTE: this file intentionally does NOT mock BaseController.checkPermission.
 // It proves real HTTP enforcement after removing the NODE_ENV=test bypass.
@@ -9,33 +9,36 @@ import createServer from "../../src/server";
 type TestAgent = ReturnType<typeof supertest.agent>;
 
 function uniquePhone() {
-  const suffix = Math.floor(10000000 + Math.random() * 89999999).toString();
+  // 11-digit Iranian mobile (09XXXXXXXXX) — 10-digit numbers fail validation.
+  const suffix = Math.floor(100000000 + Math.random() * 900000000).toString();
   return `09${suffix}`;
 }
 
-function uniqueRestaurant(displayPrefix = "authz-rest") {
+function uniqueRestaurant(displayPrefix = 'authz-rest') {
   const tag = randomUUID().slice(0, 8);
   return {
-    name: "AuthZ Restaurant",
+    name: 'AuthZ Restaurant',
     displayName: `${displayPrefix}-${tag}`,
   };
 }
 
 async function signupAndSignin(agent: TestAgent) {
   const phoneNumber = uniquePhone();
-  const password = "P@ssword1234";
+  const password = 'P@ssword1234';
   const username = `u-${randomUUID().slice(0, 8)}`;
   const email = `${randomUUID().slice(0, 8)}@example.com`;
 
-  const signup = await agent.post("/auth/res-signup").send({ phoneNumber, password, username, email });
+  const signup = await agent
+    .post('/auth/res-signup')
+    .send({ phoneNumber, password, username, email });
   expect(signup.status).toBe(201);
 
-  const signin = await agent.post("/auth/res-signin").send({ phoneNumber, password });
+  const signin = await agent.post('/auth/res-signin').send({ phoneNumber, password });
   expect(signin.status).toBe(200);
 }
 
-describe("AuthZ enforcement (Phase-1)", () => {
-  test("GET /restaurants/{id} rejects cross-owner access with 403", async () => {
+describe('AuthZ enforcement (Phase-1)', () => {
+  test('GET /restaurants/{id} rejects cross-owner access with 403', async () => {
     const appA = createServer();
     const appB = createServer();
     const agentA = supertest.agent(appA);
@@ -43,7 +46,7 @@ describe("AuthZ enforcement (Phase-1)", () => {
     await signupAndSignin(agentA);
     await signupAndSignin(agentB);
 
-    const created = await agentA.post("/restaurants").send(uniqueRestaurant());
+    const created = await agentA.post('/restaurants').send(uniqueRestaurant());
     expect(created.status).toBe(201);
     const restaurantId = created.body.id as string;
     expect(restaurantId).toBeDefined();
@@ -55,7 +58,7 @@ describe("AuthZ enforcement (Phase-1)", () => {
     expect(allowed.status).toBe(200);
   });
 
-  test("GET /branches/{id} rejects cross-owner access with 403", async () => {
+  test('GET /branches/{id} rejects cross-owner access with 403', async () => {
     const appA = createServer();
     const appB = createServer();
     const agentA = supertest.agent(appA);
@@ -63,7 +66,7 @@ describe("AuthZ enforcement (Phase-1)", () => {
     await signupAndSignin(agentA);
     await signupAndSignin(agentB);
 
-    const created = await agentA.post("/restaurants").send(uniqueRestaurant("authz-branch"));
+    const created = await agentA.post('/restaurants').send(uniqueRestaurant('authz-branch'));
     expect(created.status).toBe(201);
     const branchId = created.body.branches?.[0]?.id as string;
     expect(branchId).toBeDefined();
@@ -75,7 +78,7 @@ describe("AuthZ enforcement (Phase-1)", () => {
     expect(allowed.status).toBe(200);
   });
 
-  test("GET /menus/{id} rejects cross-owner access with 403", async () => {
+  test('GET /menus/{id} rejects cross-owner access with 403', async () => {
     const appA = createServer();
     const appB = createServer();
     const agentA = supertest.agent(appA);
@@ -83,12 +86,12 @@ describe("AuthZ enforcement (Phase-1)", () => {
     await signupAndSignin(agentA);
     await signupAndSignin(agentB);
 
-    const created = await agentA.post("/restaurants").send(uniqueRestaurant("authz-menu"));
+    const created = await agentA.post('/restaurants').send(uniqueRestaurant('authz-menu'));
     expect(created.status).toBe(201);
     const branchId = created.body.branches?.[0]?.id as string;
     expect(branchId).toBeDefined();
 
-    const menuRes = await agentA.post("/menus").send({ branchId, name: "authz-menu" });
+    const menuRes = await agentA.post('/menus').send({ branchId, name: 'authz-menu' });
     expect(menuRes.status).toBe(201);
     const menuId = menuRes.body.id as string;
     expect(menuId).toBeDefined();

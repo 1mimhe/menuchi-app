@@ -6424,6 +6424,77 @@
 				]
 			}
 		},
+		"/health": {
+			"get": {
+				"operationId": "Health",
+				"responses": {
+					"200": {
+						"description": "Ok",
+						"content": {
+							"application/json": {
+								"schema": {
+									"properties": {
+										"version": {
+											"type": "string"
+										},
+										"uptime": {
+											"type": "number",
+											"format": "double"
+										},
+										"status": {
+											"type": "string"
+										}
+									},
+									"required": [
+										"version",
+										"uptime",
+										"status"
+									],
+									"type": "object"
+								}
+							}
+						}
+					}
+				},
+				"description": "Liveness probe — always 200 when the process is running.\nUsed by Docker HEALTHCHECK and orchestrators.",
+				"tags": [
+					"Health"
+				],
+				"security": [],
+				"parameters": []
+			}
+		},
+		"/ready": {
+			"get": {
+				"operationId": "Ready",
+				"responses": {
+					"200": {
+						"description": "Ok",
+						"content": {
+							"application/json": {
+								"schema": {
+									"properties": {
+										"status": {
+											"type": "string"
+										}
+									},
+									"required": [
+										"status"
+									],
+									"type": "object"
+								}
+							}
+						}
+					}
+				},
+				"description": "Readiness probe — 200 only when Postgres + Redis are reachable.",
+				"tags": [
+					"Health"
+				],
+				"security": [],
+				"parameters": []
+			}
+		},
 		"/dashboard/profile": {
 			"get": {
 				"operationId": "GetProfile",

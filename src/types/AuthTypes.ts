@@ -22,7 +22,7 @@ export interface UserSession {
   phoneNumber?: IranPhoneNumber | null;
   restaurants?: RestaurantSession[];
   recentlyOrderIds?: UUID[];
-};
+}
 
 export interface RestaurantSession {
   id?: UUID;
@@ -44,7 +44,9 @@ export interface RestaurantUpdateSession extends BaseUpdateSession {
   branch: BranchSession;
 }
 
-export interface BranchUpdateSession extends RestaurantUpdateSession {}
+// Alias (not an extension): branch updates carry the same shape as restaurant
+// updates. Kept as a named alias for SessionUpdateScope readability.
+export type BranchUpdateSession = RestaurantUpdateSession;
 
 export interface MenuUpdateSession extends BaseUpdateSession {
   restaurantId: UUID;

@@ -12,6 +12,8 @@ import { OrderController } from './controllers/OrderController';
 // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
 import { MenuController } from './controllers/MenuController';
 // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+import { HealthController } from './controllers/HealthController';
+// WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
 import { UserController } from './controllers/DashboardController';
 // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
 import { CategoryNameController } from './controllers/CategoryNameController';
@@ -2269,6 +2271,64 @@ export function RegisterRoutes(app: Router) {
             }
         });
         // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsHealthController_health: Record<string, TsoaRoute.ParameterSchema> = {
+        };
+        app.get('/health',
+            ...(fetchMiddlewares<RequestHandler>(HealthController)),
+            ...(fetchMiddlewares<RequestHandler>(HealthController.prototype.health)),
+
+            async function HealthController_health(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsHealthController_health, request, response });
+
+                const controller = new HealthController();
+
+              await templateService.apiHandler({
+                methodName: 'health',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: undefined,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+        const argsHealthController_ready: Record<string, TsoaRoute.ParameterSchema> = {
+        };
+        app.get('/ready',
+            ...(fetchMiddlewares<RequestHandler>(HealthController)),
+            ...(fetchMiddlewares<RequestHandler>(HealthController.prototype.ready)),
+
+            async function HealthController_ready(request: ExRequest, response: ExResponse, next: any) {
+
+            // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
+
+            let validatedArgs: any[] = [];
+            try {
+                validatedArgs = templateService.getValidatedArgs({ args: argsHealthController_ready, request, response });
+
+                const controller = new HealthController();
+
+              await templateService.apiHandler({
+                methodName: 'ready',
+                controller,
+                response,
+                next,
+                validatedArgs,
+                successStatus: undefined,
+              });
+            } catch (err) {
+                return next(err);
+            }
+        });
+        // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
         const argsUserController_getProfile: Record<string, TsoaRoute.ParameterSchema> = {
                 req: {"in":"request","name":"req","required":true,"dataType":"object"},
         };
@@ -2949,6 +3009,7 @@ export function RegisterRoutes(app: Router) {
         // WARNING: This file was auto-generated with tsoa. Please do not modify it. Re-run tsoa to re-generate this file: https://github.com/lukeautry/tsoa
         const argsAuthController_restaurantOwnerSignup: Record<string, TsoaRoute.ParameterSchema> = {
                 body: {"in":"body","name":"body","required":true,"ref":"UserCompactIn"},
+                req: {"in":"request","name":"req","dataType":"object"},
         };
         app.post('/auth/res-signup',
             ...(fetchMiddlewares<RequestHandler>(AuthController)),

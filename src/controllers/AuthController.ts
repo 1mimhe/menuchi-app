@@ -1,23 +1,25 @@
-import {
-  Body,
-  Post,
-  Request,
-  Response,
-  Route,
-  SuccessResponse,
-  Tags,
-} from 'tsoa';
+import { Body, Post, Request, Response, Route, SuccessResponse, Tags } from 'tsoa';
 import { ConstraintsDatabaseError } from '../exceptions/DatabaseError';
 import { UserCompactIn, UserCompleteOut } from '../types/UserTypes';
-import { CheckOtpIn, SendOtpIn, UserLogin } from "../types/AuthTypes";
-import AuthService from '../services/AuthService';
+import { CheckOtpIn, SendOtpIn, UserLogin } from '../types/AuthTypes';
 import { UserValidationError } from '../exceptions/ValidationError';
 import express from 'express';
 import { CookieNames, RolesEnum } from '../types/Enums';
-import BaseController from "./BaseController";
+import BaseController from './BaseController';
 import { InvalidCredentialsError } from '../exceptions/AuthError';
 import MenuchiError from '../exceptions/MenuchiError';
-import OtpRedisClient from '../config/OtpRedisClient';
+import { getOtpRedisClient } from '../config/OtpRedisClient';
+import { resolveContainer } from '../container';
+
+function readEnv() {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getEnv } = require('../config/env') as typeof import('../config/env');
+    return getEnv();
+  } catch {
+    return process.env as unknown as Record<string, string>;
+  }
+}
 
 @Route('/auth')
 @Tags('Auth')
@@ -25,12 +27,18 @@ export class AuthController extends BaseController {
   /**
    * Registers a new restaurant owner.
    */
-  @Response<ConstraintsDatabaseError>(409, 'ConstraintsDatabaseError -> A user with the provided credentials already exists.')
+  @Response<ConstraintsDatabaseError>(
+    409,
+    'ConstraintsDatabaseError -> A user with the provided credentials already exists.'
+  )
   @Response<UserValidationError>(422, '4225 UserValidationError')
   @SuccessResponse(201, 'User signed up successfully.')
   @Post('/res-signup')
-  public async restaurantOwnerSignup(@Body() body: UserCompactIn): Promise<UserCompleteOut> {
-    return AuthService.signup(body);
+  public async restaurantOwnerSignup(
+    @Body() body: UserCompactIn,
+    @Request() req?: express.Request
+  ): Promise<UserCompleteOut> {
+    return resolveContainer(req).auth.signup(body);
   }
 
   /**
@@ -45,9 +53,9 @@ export class AuthController extends BaseController {
   ): Promise<boolean> {
     if (req.session.user) return true;
 
-    const { accessToken, user } = await AuthService.signin(body);
+    const { accessToken, user } = await resolveContainer(req).auth.signin(body);
 
-    const isProduction = process.env.NODE_ENV === 'production';
+    const isProduction = readEnv().NODE_ENV === 'production';
     req.res?.cookie(CookieNames.AccessToken, accessToken, {
       httpOnly: true,
       secure: isProduction,
@@ -66,14 +74,14 @@ export class AuthController extends BaseController {
   /**
    * Sends an OTP to the email.
    */
-   @SuccessResponse(200, 'Otp code sent successfully.')
-   @Post('/send-otp')
-   public async sendOtp(@Body() body: SendOtpIn): Promise<boolean> {
-     const streamName = process.env.OTP_STREAM!;
-     await OtpRedisClient.xAdd(streamName, '*',  { email: body.email });
-     return true;
-   }
-   
+  @SuccessResponse(200, 'Otp code sent successfully.')
+  @Post('/send-otp')
+  public async sendOtp(@Body() body: SendOtpIn): Promise<boolean> {
+    const streamName = readEnv().OTP_STREAM as string;
+    await getOtpRedisClient().xAdd(streamName, '*', { email: body.email });
+    return true;
+  }
+
   /**
    * Sends email and OTP for auth.
    */
@@ -84,14 +92,16 @@ export class AuthController extends BaseController {
     @Request() req: express.Request
   ): Promise<boolean> {
     // Brute-force guard: max 5 attempts per email per 10 minutes.
+    const otpRedis = getOtpRedisClient();
     const attemptsKey = `otp:attempts:${body.email}`;
-    const attempts = await OtpRedisClient.incr(attemptsKey);
-    if (attempts === 1) await OtpRedisClient.expire(attemptsKey, 600);
+    const attempts = await otpRedis.incr(attemptsKey);
+    if (attempts === 1) await otpRedis.expire(attemptsKey, 600);
     if (attempts > 5) {
       throw new MenuchiError('Too many OTP attempts. Try again later.', 429);
     }
 
-    const otpService = `${process.env.INTERNAL_OTP_URL}${process.env.INTERNAL_OTP_ENDPOINT}/${body.email}`;
+    const e = readEnv();
+    const otpService = `${e.INTERNAL_OTP_URL}${e.INTERNAL_OTP_ENDPOINT}/${body.email}`;
     let otpCode: unknown;
     try {
       const res = await fetch(otpService, { signal: AbortSignal.timeout(5000) });
@@ -100,15 +110,15 @@ export class AuthController extends BaseController {
     } catch {
       throw new MenuchiError('OTP verification service unavailable.', 502);
     }
- 
+
     if (body.code === otpCode) {
       const payload = {
         userId: body.email,
-        roles: [RolesEnum.RestaurantCustomer]
+        roles: [RolesEnum.RestaurantCustomer],
       };
-      const accessToken = AuthService.generateAuthToken(payload);
+      const accessToken = resolveContainer(req).auth.generateAuthToken(payload);
 
-      const isProduction = process.env.NODE_ENV === 'production';
+      const isProduction = readEnv().NODE_ENV === 'production';
       req.res?.cookie(CookieNames.AccessToken, accessToken, {
         httpOnly: true,
         secure: isProduction,
@@ -123,12 +133,12 @@ export class AuthController extends BaseController {
       // recentlyOrderIds is never undefined downstream.
       req.session.user = { id: body.email, recentlyOrderIds: [] };
       req.session.lastAccessed = new Date();
-      await OtpRedisClient.del(attemptsKey);
+      await getOtpRedisClient().del(attemptsKey);
     } else throw new InvalidCredentialsError();
- 
+
     return true;
-  } 
- 
+  }
+
   /**
    * Logs out the current user.
    */
@@ -141,7 +151,7 @@ export class AuthController extends BaseController {
     const cookieOptions = {
       path: '/',
       sameSite: 'lax' as const,
-      secure: process.env.NODE_ENV === 'production',
+      secure: readEnv().NODE_ENV === 'production',
       httpOnly: true,
     };
     req.res?.clearCookie(CookieNames.AccessToken, cookieOptions);

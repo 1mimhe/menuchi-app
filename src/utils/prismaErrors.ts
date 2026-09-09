@@ -12,21 +12,20 @@ import { Prisma } from '@prisma/client';
  * - P2002: unique-constraint violation (handled generically as 409 upstream).
  */
 export function isRecordNotFound(error: unknown): boolean {
-  return (
-    error instanceof Prisma.PrismaClientKnownRequestError &&
-    error.code === 'P2025'
-  );
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025';
 }
 
 export function isForeignKeyViolation(error: unknown, constraint?: string): boolean {
-  if (
-    !(error instanceof Prisma.PrismaClientKnownRequestError) ||
-    error.code !== 'P2003'
-  ) {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2003') {
     return false;
   }
   if (!constraint) return true;
-  const meta = error.meta as { field_name?: unknown } | undefined;
-  const field = typeof meta?.field_name === 'string' ? meta.field_name : '';
-  return field.includes(constraint);
+  // Prisma ≤5 reports the FK in `meta.field_name` (e.g.
+  // `categories_backlog_id_fkey (index)`); Prisma ≥6 reports it in
+  // `meta.constraint` (e.g. `branches_restaurant_id_fkey`). Check both.
+  const meta = error.meta as { field_name?: unknown; constraint?: unknown } | undefined;
+  const candidates = [meta?.field_name, meta?.constraint].filter(
+    (v): v is string => typeof v === 'string'
+  );
+  return candidates.some((c) => c.includes(constraint));
 }
