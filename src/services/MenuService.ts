@@ -1,211 +1,280 @@
 import { Prisma, PrismaClient } from '@prisma/client';
 import prismaClient from '../db/prisma';
 import { UUID } from '../types/TypeAliases';
-import { CylinderCompactIn, CreateCylinderCompleteOut, MenuCategoryCompactIn, CreateMenuCategoryCompleteOut, MenuCompactIn, MenuCompleteOut, MenuCompletePlusOut, CreateMenuCompactIn, OwnerPreviewCompactOut, MenuPreviewCompleteOut, MenuViewCompleteOut as MenuViewCompleteOut, MenuCategoryCompleteOut, MenuCompleteWithCountsOut, MenuCompeteWithResIdOut } from '../types/MenuTypes';
+import {
+  CylinderCompactIn,
+  CreateCylinderCompleteOut,
+  MenuCategoryCompactIn,
+  CreateMenuCategoryCompleteOut,
+  MenuCompactIn,
+  MenuCompleteOut,
+  MenuCompletePlusOut,
+  CreateMenuCompactIn,
+  OwnerPreviewCompactOut,
+  MenuPreviewCompleteOut,
+  MenuViewCompleteOut as MenuViewCompleteOut,
+  MenuCategoryCompleteOut,
+  MenuCompleteWithCountsOut,
+  MenuCompeteWithResIdOut,
+} from '../types/MenuTypes';
 import MenuchiError from '../exceptions/MenuchiError';
-import { BranchNotFound, CategoryNotFound, CylinderNotFound, MenuNotFound } from '../exceptions/NotFoundError';
+import {
+  BranchNotFound,
+  CategoryNotFound,
+  CylinderNotFound,
+  MenuNotFound,
+} from '../exceptions/NotFoundError';
 import { isForeignKeyViolation, isRecordNotFound } from '../utils/prismaErrors';
 import { withUniqueRetry } from '../utils/positionRetry';
-import S3Service from './S3Service';
+import { getS3Service, PresignedUrlGenerator } from './S3Service';
 import { BacklogCompleteOut } from '../types/RestaurantTypes';
 import { Days } from '../types/Enums';
 
 export class MenuService {
-  constructor(private prisma: PrismaClient = prismaClient) {}
+  private s3: PresignedUrlGenerator;
+
+  constructor(
+    private prisma: PrismaClient = prismaClient,
+    s3?: PresignedUrlGenerator
+  ) {
+    this.s3 = s3 ?? getS3Service();
+  }
 
   async createMenu(body: CreateMenuCompactIn): Promise<MenuCompeteWithResIdOut | never> {
-    const { branch, ...newMenu } = await this.prisma.menu.create({
-      data: body,
-      include: {
-        branch: true
-      }
-    }).catch((error: Error) => {
-      if (isForeignKeyViolation(error, 'menus_branch_id_fkey'))
-        throw new BranchNotFound();
-      throw error;
-    });
+    const { branch, ...newMenu } = await this.prisma.menu
+      .create({
+        data: body,
+        include: {
+          branch: true,
+        },
+      })
+      .catch((error: Error) => {
+        if (isForeignKeyViolation(error, 'menus_branch_id_fkey')) throw new BranchNotFound();
+        throw error;
+      });
 
     const restaurantId = branch?.restaurantId;
 
     return {
       ...newMenu,
-      restaurantId: restaurantId
+      restaurantId: restaurantId,
     };
   }
 
   async updateMenu(menuId: UUID, menuDTO: MenuCompactIn) {
-    return this.prisma.menu.update({
-      where: {
-        id: menuId
-      },
-      data: menuDTO
-    })
-    .catch((error: Error) => {
-      if (isRecordNotFound(error))
-        throw new MenuNotFound();
-      throw error;
-    });
+    return this.prisma.menu
+      .update({
+        where: {
+          id: menuId,
+        },
+        data: menuDTO,
+      })
+      .catch((error: Error) => {
+        if (isRecordNotFound(error)) throw new MenuNotFound();
+        throw error;
+      });
   }
 
-  async createCylinder(menuId: UUID, cylinderDTO: CylinderCompactIn  ): Promise<CreateCylinderCompleteOut | never> {
+  async createCylinder(
+    menuId: UUID,
+    cylinderDTO: CylinderCompactIn
+  ): Promise<CreateCylinderCompleteOut | never> {
     // Retry wrapper: concurrent creates can read the same max position.
-    return withUniqueRetry(() => this.prisma.$transaction(async (tx) => {
-      const maxPositionInMenu = await tx.cylinder.aggregate({
-        _max: {
-          positionInMenu: true
-        },
-        where: {
-          menuId,
-          deletedAt: null
-        }
-      }).catch((error: Error) => {
-        if (isForeignKeyViolation(error, 'cylinders_menu_id_fkey'))
-          throw new MenuNotFound();
-        throw error;
-      });
+    return withUniqueRetry(() =>
+      this.prisma.$transaction(async (tx) => {
+        const maxPositionInMenu = await tx.cylinder
+          .aggregate({
+            _max: {
+              positionInMenu: true,
+            },
+            where: {
+              menuId,
+              deletedAt: null,
+            },
+          })
+          .catch((error: Error) => {
+            if (isForeignKeyViolation(error, 'cylinders_menu_id_fkey')) throw new MenuNotFound();
+            throw error;
+          });
 
-      const positionInMenu = (maxPositionInMenu._max.positionInMenu ?? 0) + 1;
+        const positionInMenu = (maxPositionInMenu._max.positionInMenu ?? 0) + 1;
 
-      return tx.cylinder.create({
-        data: {
-          menuId,
-          ...cylinderDTO,
-          positionInMenu
-        }
-      }).catch((error: Error) => {
-        if (isForeignKeyViolation(error, 'cylinders_menu_id_fkey'))
-          throw new MenuNotFound();
-        throw error;
-      });
-    }));
+        return tx.cylinder
+          .create({
+            data: {
+              menuId,
+              ...cylinderDTO,
+              positionInMenu,
+            },
+          })
+          .catch((error: Error) => {
+            if (isForeignKeyViolation(error, 'cylinders_menu_id_fkey')) throw new MenuNotFound();
+            throw error;
+          });
+      })
+    );
   }
 
   async reorderCylinders(menuId: UUID, cylindersId: UUID[]) {
     await this.isValidCylindersId(menuId, cylindersId);
-    return this.prisma.$executeRaw`
-      UPDATE "cylinders"
-      SET "position_in_menu" = CASE "id"
-        ${Prisma.join(cylindersId.map((cylinderId, index) => Prisma.sql`WHEN ${cylinderId}::uuid THEN ${index + 1}`), ' ')}
-      ELSE "position_in_menu"
-      END
-      WHERE "id" IN (${Prisma.join(cylindersId.map(id => Prisma.sql`${id}::uuid`))})
-    `;
+    // Two-step swap (see BacklogService.reorderItemsInCategory): per-row
+    // unique checks would fire mid-swap on a single CASE statement.
+    const OFFSET = 1000000;
+    const ids = Prisma.join(cylindersId.map((id) => Prisma.sql`${id}::uuid`));
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        UPDATE "cylinders" SET "position_in_menu" = "position_in_menu" + ${OFFSET}
+        WHERE "id" IN (${ids})
+      `;
+      return tx.$executeRaw`
+        UPDATE "cylinders"
+        SET "position_in_menu" = CASE "id"
+          ${Prisma.join(
+            cylindersId.map(
+              (cylinderId, index) => Prisma.sql`WHEN ${cylinderId}::uuid THEN ${index + 1}`
+            ),
+            ' '
+          )}
+        ELSE "position_in_menu"
+        END
+        WHERE "id" IN (${ids})
+      `;
+    });
   }
 
   async createMenuCategory(
     menuId: UUID,
-    {
-      categoryId,
-      cylinderId,
-      items 
-    }: MenuCategoryCompactIn
+    { categoryId, cylinderId, items }: MenuCategoryCompactIn
   ): Promise<CreateMenuCategoryCompleteOut | never> {
     // Retry wrapper: concurrent creates can read the same max position.
-    return withUniqueRetry(() => this.prisma.$transaction(async (tx) => {
-      const validItems = await tx.item.findMany({
-        where: {
-          id: {
-            in: items
+    return withUniqueRetry(() =>
+      this.prisma.$transaction(async (tx) => {
+        const validItems = await tx.item.findMany({
+          where: {
+            id: {
+              in: items,
+            },
+            categoryId: categoryId,
+            deletedAt: null,
           },
-          categoryId: categoryId,
-          deletedAt: null,
-        },
-        orderBy: {
-          positionInCategory: 'asc',
-        },
-        select: {
-          id: true
-        },
-      });
-
-      if (validItems.length !== items.length) {
-        throw new MenuchiError('All item IDs must belong to the specified category.', 400);
-      }
-
-      const maxPositionInCylinder = await tx.menuCategory.aggregate({
-        _max: {
-          positionInCylinder: true
-        },
-        where: {
-          cylinder: {
-            menuId,
-            deletedAt: null
-          }
-        }
-      });
-
-      const positionInCylinder = (maxPositionInCylinder._max.positionInCylinder ?? 0) + 1;
-
-      await tx.category.findUniqueOrThrow({
-        where: {
-          id: categoryId,
-          backlog: {
-            branch: {
-              menus: {
-                some: {
-                  id: menuId
-                }
-              }
-            }
+          orderBy: {
+            positionInCategory: 'asc',
           },
-          deletedAt: null
-        }
-      }).catch((error: Error) => {
-          if (isRecordNotFound(error))
-            throw new MenuNotFound();
-          throw error;
-      });
+          select: {
+            id: true,
+          },
+        });
 
-      const newMenuCategory = await tx.menuCategory.create({
-        data: {
-          categoryId, cylinderId, positionInCylinder,
-          items: {
-            connect: validItems.map(item => ({ id: item.id }))
-          }
+        if (validItems.length !== items.length) {
+          throw new MenuchiError('All item IDs must belong to the specified category.', 400);
         }
-      }).catch((error: Error) => {
-        if (isForeignKeyViolation(error, 'menu_categories_cylinder_id_fkey'))
-          throw new CylinderNotFound();
-        if (isForeignKeyViolation(error, 'menu_categories_category_id_fkey'))
-          throw new CategoryNotFound();
-        throw error;
-      });
 
-      await tx.$executeRaw`
+        const maxPositionInCylinder = await tx.menuCategory.aggregate({
+          _max: {
+            positionInCylinder: true,
+          },
+          where: {
+            cylinder: {
+              menuId,
+              deletedAt: null,
+            },
+          },
+        });
+
+        const positionInCylinder = (maxPositionInCylinder._max.positionInCylinder ?? 0) + 1;
+
+        await tx.category
+          .findUniqueOrThrow({
+            where: {
+              id: categoryId,
+              backlog: {
+                branch: {
+                  menus: {
+                    some: {
+                      id: menuId,
+                    },
+                  },
+                },
+              },
+              deletedAt: null,
+            },
+          })
+          .catch((error: Error) => {
+            if (isRecordNotFound(error)) throw new MenuNotFound();
+            throw error;
+          });
+
+        const newMenuCategory = await tx.menuCategory
+          .create({
+            data: {
+              categoryId,
+              cylinderId,
+              positionInCylinder,
+              items: {
+                connect: validItems.map((item) => ({ id: item.id })),
+              },
+            },
+          })
+          .catch((error: Error) => {
+            if (isForeignKeyViolation(error, 'menu_categories_cylinder_id_fkey'))
+              throw new CylinderNotFound();
+            if (isForeignKeyViolation(error, 'menu_categories_category_id_fkey'))
+              throw new CategoryNotFound();
+            throw error;
+          });
+
+        await tx.$executeRaw`
         UPDATE "items"
         SET "position_in_menu_categories" = CASE "id"
-          ${Prisma.join(validItems.map((item, index) => Prisma.sql`WHEN ${item.id}::uuid THEN ${index + 1}`), ' ')}
+          ${Prisma.join(
+            validItems.map((item, index) => Prisma.sql`WHEN ${item.id}::uuid THEN ${index + 1}`),
+            ' '
+          )}
         ELSE "position_in_menu_categories"
         END
-        WHERE "id" IN (${Prisma.join(validItems.map(item => Prisma.sql`${item.id}::uuid`))})
+        WHERE "id" IN (${Prisma.join(validItems.map((item) => Prisma.sql`${item.id}::uuid`))})
       `;
 
-      return newMenuCategory;
-    }));
+        return newMenuCategory;
+      })
+    );
   }
 
   async getMenuCategory(menuCategoryId: UUID) {
     return this.prisma.menuCategory.findUniqueOrThrow({
       where: {
         id: menuCategoryId,
-        deletedAt: null
+        deletedAt: null,
       },
       include: {
-        items: true
-      }
+        items: true,
+      },
     });
   }
 
   async reorderMenuCategories(menuId: UUID, menuCategoriesId: UUID[]) {
     await this.isValidMenuCategoriesId(menuId, menuCategoriesId);
-    return this.prisma.$executeRaw`
-      UPDATE "menu_categories"
-      SET "position_in_cylinder" = CASE "id"
-        ${Prisma.join(menuCategoriesId.map((menuCategory, index) => Prisma.sql`WHEN ${menuCategory}::uuid THEN ${index + 1}`), ' ')}
-      ELSE "position_in_cylinder"
-      END
-      WHERE "id" IN (${Prisma.join(menuCategoriesId.map(id => Prisma.sql`${id}::uuid`))})
-    `;
+    const OFFSET = 1000000;
+    const ids = Prisma.join(menuCategoriesId.map((id) => Prisma.sql`${id}::uuid`));
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        UPDATE "menu_categories" SET "position_in_cylinder" = "position_in_cylinder" + ${OFFSET}
+        WHERE "id" IN (${ids})
+      `;
+      return tx.$executeRaw`
+        UPDATE "menu_categories"
+        SET "position_in_cylinder" = CASE "id"
+          ${Prisma.join(
+            menuCategoriesId.map(
+              (menuCategory, index) => Prisma.sql`WHEN ${menuCategory}::uuid THEN ${index + 1}`
+            ),
+            ' '
+          )}
+        ELSE "position_in_cylinder"
+        END
+        WHERE "id" IN (${ids})
+      `;
+    });
   }
 
   async deleteMenuCategory(menuId: UUID, menuCategoriesId: UUID[]) {
@@ -213,62 +282,75 @@ export class MenuService {
       await tx.menuCategory.deleteMany({
         where: {
           id: {
-            in: menuCategoriesId
+            in: menuCategoriesId,
           },
           cylinder: {
-            menuId
-          }
-        }
+            menuId,
+          },
+        },
       });
 
       await tx.item.updateMany({
         where: {
           menuCategoryId: {
-            in: menuCategoriesId
+            in: menuCategoriesId,
           },
           menuCategory: {
             cylinder: {
-              menuId
-            }
-          }
+              menuId,
+            },
+          },
         },
         data: {
           positionInMenuCategory: null,
-          isActive: true
-        }
+          isActive: true,
+        },
       });
     });
   }
 
   async reorderMenuItems(menuId: UUID, menuItemsId: UUID[]) {
     await this.isValidMenuItemsId(menuId, menuItemsId);
-    return this.prisma.$executeRaw`
-      UPDATE "items"
-      SET "position_in_menu_categories" = CASE "id"
-        ${Prisma.join(menuItemsId.map((menuItem, index) => Prisma.sql`WHEN ${menuItem}::uuid THEN ${index + 1}`), ' ')}
-      ELSE "position_in_menu_categories"
-      END
-      WHERE "id" IN (${Prisma.join(menuItemsId.map(id => Prisma.sql`${id}::uuid`))})
-    `;
+    const OFFSET = 1000000;
+    const ids = Prisma.join(menuItemsId.map((id) => Prisma.sql`${id}::uuid`));
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        UPDATE "items" SET "position_in_menu_categories" = "position_in_menu_categories" + ${OFFSET}
+        WHERE "id" IN (${ids})
+      `;
+      return tx.$executeRaw`
+        UPDATE "items"
+        SET "position_in_menu_categories" = CASE "id"
+          ${Prisma.join(
+            menuItemsId.map(
+              (menuItem, index) => Prisma.sql`WHEN ${menuItem}::uuid THEN ${index + 1}`
+            ),
+            ' '
+          )}
+        ELSE "position_in_menu_categories"
+        END
+        WHERE "id" IN (${ids})
+      `;
+    });
   }
 
   async deleteMenuItems(menuId: UUID, menuItemsId: UUID[]) {
     return this.prisma.item.updateMany({
       where: {
         id: {
-          in: menuItemsId
+          in: menuItemsId,
         },
         menuCategory: {
           cylinder: {
-            menuId
-          }
-        }
+            menuId,
+          },
+        },
       },
       data: {
         menuCategoryId: null,
         positionInMenuCategory: null,
-        isActive: true
-      }
+        isActive: true,
+      },
     });
   }
 
@@ -278,61 +360,68 @@ export class MenuService {
         id: menuItemId,
         menuCategory: {
           cylinder: {
-            menuId
-          }
+            menuId,
+          },
         },
-        deletedAt: null
+        deletedAt: null,
       },
       data: {
-        isActive
-      }
+        isActive,
+      },
     });
   }
 
-  private async isValidMenuItemsId(menuId: UUID, itemsId: UUID[], areSameMenuCategory = true): Promise<void | never> {
+  private async isValidMenuItemsId(
+    menuId: UUID,
+    itemsId: UUID[],
+    areSameMenuCategory = true
+  ): Promise<void | never> {
     const items = await this.prisma.item.findMany({
       where: {
         id: {
-          in: itemsId
+          in: itemsId,
         },
         deletedAt: null,
         menuCategory: {
           cylinder: {
-            menuId
-          }
-        }
+            menuId,
+          },
+        },
       },
       select: {
-         id: true,
-         menuCategoryId: true
-      }
+        id: true,
+        menuCategoryId: true,
+      },
     });
-  
+
     if (items.length !== itemsId.length)
       throw new MenuchiError('Some item IDs are invalid or do not belong to the menu.', 400);
 
     if (areSameMenuCategory) {
-      const menuCategoryIds = new Set(items.map(item => item.menuCategoryId));
+      const menuCategoryIds = new Set(items.map((item) => item.menuCategoryId));
       if (menuCategoryIds.size > 1)
         throw new MenuchiError('All item IDs must belong to the same menu category.', 400);
     }
   }
 
-  private async isValidMenuCategoriesId(menuId: UUID, menuCategoriesId: UUID[]): Promise<void | never> {
+  private async isValidMenuCategoriesId(
+    menuId: UUID,
+    menuCategoriesId: UUID[]
+  ): Promise<void | never> {
     const menuCategories = await this.prisma.menuCategory.findMany({
       where: {
         id: {
-          in: menuCategoriesId
+          in: menuCategoriesId,
         },
         cylinder: {
-          menuId
-        }
+          menuId,
+        },
       },
       select: {
-        id: true
-      }
+        id: true,
+      },
     });
-    
+
     if (menuCategories.length !== menuCategoriesId.length)
       throw new MenuchiError('All menu category IDs must be in the request.', 400);
   }
@@ -341,125 +430,125 @@ export class MenuService {
     const cylinders = await this.prisma.cylinder.findMany({
       where: {
         id: {
-          in: cylindersId
+          in: cylindersId,
         },
-        menuId
+        menuId,
       },
       select: {
-        id: true
-      }
+        id: true,
+      },
     });
-    
-    if (cylinders.length !== cylindersId.length) throw new MenuchiError('All cylinder IDs must be in the request.', 400);
+
+    if (cylinders.length !== cylindersId.length)
+      throw new MenuchiError('All cylinder IDs must be in the request.', 400);
   }
 
   async deleteMenu(menuId: UUID) {
     return this.prisma.$transaction(async (tx) => {
       await tx.menu.update({
         where: {
-          id: menuId
+          id: menuId,
         },
         data: {
-          deletedAt: new Date()
-        }
+          deletedAt: new Date(),
+        },
       });
 
       await tx.cylinder.updateMany({
         where: {
-          menuId
+          menuId,
         },
         data: {
-          deletedAt: new Date()
-        }
+          deletedAt: new Date(),
+        },
       });
 
       await tx.menuCategory.updateMany({
         where: {
           cylinder: {
-            menuId
-          }
+            menuId,
+          },
         },
         data: {
-          deletedAt: new Date()
-        }
+          deletedAt: new Date(),
+        },
       });
     });
   }
 
   async getBacklog(backlogId: UUID, search = ''): Promise<BacklogCompleteOut | never> {
-      const backlog = await this.prisma.backlog
-        .findUniqueOrThrow({
-          where: {
-            id: backlogId,
-          },
-          include: {
-            categories: {
-              where: {
-                deletedAt: null,
-                categoryName: {
-                  name: {
-                    contains: search,
-                    mode: 'insensitive'
-                  }
-                }
-              },
-              include: {
-                categoryName: true,
-                items: {
-                  where: {
-                    deletedAt: null,
-                    menuCategoryId: null
-                  },
-                  orderBy: {
-                    positionInCategory: 'asc',
-                  },
+    const backlog = await this.prisma.backlog
+      .findUniqueOrThrow({
+        where: {
+          id: backlogId,
+        },
+        include: {
+          categories: {
+            where: {
+              deletedAt: null,
+              categoryName: {
+                name: {
+                  contains: search,
+                  mode: 'insensitive',
                 },
               },
-              omit: {
-                categoryNameId: true,
+            },
+            include: {
+              categoryName: true,
+              items: {
+                where: {
+                  deletedAt: null,
+                  menuCategoryId: null,
+                },
+                orderBy: {
+                  positionInCategory: 'asc',
+                },
               },
-              orderBy: {
-                positionInBacklog: 'asc'
-              }
+            },
+            omit: {
+              categoryNameId: true,
+            },
+            orderBy: {
+              positionInBacklog: 'asc',
             },
           },
-        })
-        .catch((error: Error) => {
-          if (isRecordNotFound(error))
-            throw new BranchNotFound();
-          throw error;
-        });
-  
-      return {
-        ...backlog,
-        categories: await Promise.all(
-          backlog.categories.map(async (category) => ({
-            ...category,
-            categoryName: category.categoryName?.name ?? null,
-            items: await Promise.all(
-              category.items.map(async (item) => ({
-                ...item,
-                categoryName: category.categoryName?.name ?? null,
-                picUrl: await S3Service.generateGetPresignedUrl(item.picKey),
-                picKey: undefined,
-              }))
-            ),
-          }))
-        ),
-      };
+        },
+      })
+      .catch((error: Error) => {
+        if (isRecordNotFound(error)) throw new BranchNotFound();
+        throw error;
+      });
+
+    return {
+      ...backlog,
+      categories: await Promise.all(
+        backlog.categories.map(async (category) => ({
+          ...category,
+          categoryName: category.categoryName?.name ?? null,
+          items: await Promise.all(
+            category.items.map(async (item) => ({
+              ...item,
+              categoryName: category.categoryName?.name ?? null,
+              picUrl: await this.s3.generateGetPresignedUrl(item.picKey),
+              picKey: undefined,
+            }))
+          ),
+        }))
+      ),
+    };
   }
 
   async getAllMenus(branchId: UUID): Promise<MenuCompleteWithCountsOut[]> {
     const menus = await this.prisma.menu.findMany({
       where: {
         branchId,
-        deletedAt: null
+        deletedAt: null,
       },
       include: {
         _count: {
           select: {
-            cylinders: true
-          }
+            cylinders: true,
+          },
         },
         cylinders: {
           include: {
@@ -467,180 +556,189 @@ export class MenuService {
               include: {
                 _count: {
                   select: {
-                    items: true
-                  }
-                }
-              }
-            }
-          }
-        }
+                    items: true,
+                  },
+                },
+              },
+            },
+          },
+        },
       },
       orderBy: {
-        createdAt: 'asc'
-      }
+        createdAt: 'asc',
+      },
     });
 
     // NOTE: set is per-menu — previously declared outside the map, so
     // categoriesCount accumulated across menus.
-    return Promise.all(menus.map(async (menu) => {
-      const categoriesSet = new Set<UUID>();
-      const itemsCount = menu.cylinders.reduce((acc, cylinder) => {
-        return cylinder.menuCategories.reduce((acc, mc) => {
-          categoriesSet.add(mc.categoryId!);
-          return mc._count.items + acc
-        }, 0) + acc
-      }, 0);
-      return {
-        ...menu,
-        cylindersCount: menu._count.cylinders,
-        itemsCount,
-        categoriesCount: categoriesSet.size,
-        favicon: await S3Service.generateGetPresignedUrl(menu.favicon),
-        cylinders: undefined,
-        _count: undefined
-      };
-    }));
+    return Promise.all(
+      menus.map(async (menu) => {
+        const categoriesSet = new Set<UUID>();
+        const itemsCount = menu.cylinders.reduce((acc, cylinder) => {
+          return (
+            cylinder.menuCategories.reduce((acc, mc) => {
+              categoriesSet.add(mc.categoryId!);
+              return mc._count.items + acc;
+            }, 0) + acc
+          );
+        }, 0);
+        return {
+          ...menu,
+          cylindersCount: menu._count.cylinders,
+          itemsCount,
+          categoriesCount: categoriesSet.size,
+          favicon: await this.s3.generateGetPresignedUrl(menu.favicon),
+          cylinders: undefined,
+          _count: undefined,
+        };
+      })
+    );
   }
 
   async getMenu(menuId: UUID): Promise<MenuCompletePlusOut | never> {
-    const menu = await this.prisma.menu.findUniqueOrThrow({
-      where: {
-        id: menuId,
-        deletedAt: null
-      },
-      include: {
-        cylinders: {
-          include: {
-            menuCategories: {
-              include: {
-                category: {
-                  select: {
-                    categoryName: true
-                  }
+    const menu = await this.prisma.menu
+      .findUniqueOrThrow({
+        where: {
+          id: menuId,
+          deletedAt: null,
+        },
+        include: {
+          cylinders: {
+            include: {
+              menuCategories: {
+                include: {
+                  category: {
+                    select: {
+                      categoryName: true,
+                    },
+                  },
+                  items: {
+                    orderBy: {
+                      positionInMenuCategory: 'asc',
+                    },
+                  },
                 },
-                items: {
-                  orderBy: {
-                    positionInMenuCategory: 'asc'
-                  }
-                }
+                orderBy: {
+                  positionInCylinder: 'asc',
+                },
               },
-              orderBy: {
-                positionInCylinder: 'asc'
-              }
-            }
+            },
+            orderBy: {
+              positionInMenu: 'asc',
+            },
           },
-          orderBy: {
-            positionInMenu: 'asc'
-          }
-        }
-      }
-    })
-    .catch((error: Error) => {
-      if (isRecordNotFound(error))
-        throw new MenuNotFound();
-      throw error;
-    });
+        },
+      })
+      .catch((error: Error) => {
+        if (isRecordNotFound(error)) throw new MenuNotFound();
+        throw error;
+      });
 
     return {
       ...menu,
-      favicon: await S3Service.generateGetPresignedUrl(menu.favicon),
-      cylinders: await Promise.all(menu.cylinders.map(async (cylinder) => ({
-        ...cylinder,
-        days: [
-          cylinder.sat,
-          cylinder.sun,
-          cylinder.mon,
-          cylinder.tue,
-          cylinder.wed,
-          cylinder.thu,
-          cylinder.fri
-        ],
-        sat: undefined,
-        sun: undefined,
-        mon: undefined,
-        tue: undefined,
-        wed: undefined,
-        thu: undefined,
-        fri: undefined,
-        menuCategories: await Promise.all(cylinder.menuCategories.map(async (menuCategory) => ({
-          ...menuCategory,
-          categoryName: menuCategory.category?.categoryName?.name ?? null,
-          category: undefined,
-          items: await Promise.all(
-            menuCategory.items.map(async (item) => ({
-              ...item,
-              picUrl: await S3Service.generateGetPresignedUrl(item.picKey),
-              picKey: undefined,
+      favicon: await this.s3.generateGetPresignedUrl(menu.favicon),
+      cylinders: await Promise.all(
+        menu.cylinders.map(async (cylinder) => ({
+          ...cylinder,
+          days: [
+            cylinder.sat,
+            cylinder.sun,
+            cylinder.mon,
+            cylinder.tue,
+            cylinder.wed,
+            cylinder.thu,
+            cylinder.fri,
+          ],
+          sat: undefined,
+          sun: undefined,
+          mon: undefined,
+          tue: undefined,
+          wed: undefined,
+          thu: undefined,
+          fri: undefined,
+          menuCategories: await Promise.all(
+            cylinder.menuCategories.map(async (menuCategory) => ({
+              ...menuCategory,
+              categoryName: menuCategory.category?.categoryName?.name ?? null,
+              category: undefined,
+              items: await Promise.all(
+                menuCategory.items.map(async (item) => ({
+                  ...item,
+                  picUrl: await this.s3.generateGetPresignedUrl(item.picKey),
+                  picKey: undefined,
+                }))
+              ),
             }))
           ),
-        })))
-      })))
+        }))
+      ),
     };
   }
 
   async getCompactMenu(menuId: UUID): Promise<MenuCompleteOut | never> {
-    return this.prisma.menu.findUniqueOrThrow({
-      where: {
-        id: menuId,
-        deletedAt: null
-      }
-    })
-    .catch((error: Error) => {
-      if (isRecordNotFound(error))
-        throw new MenuNotFound();
-      throw error;
-    });
+    return this.prisma.menu
+      .findUniqueOrThrow({
+        where: {
+          id: menuId,
+          deletedAt: null,
+        },
+      })
+      .catch((error: Error) => {
+        if (isRecordNotFound(error)) throw new MenuNotFound();
+        throw error;
+      });
   }
 
   async getMenuPreview(menuId: UUID): Promise<MenuPreviewCompleteOut | never> {
-    const { cylinders, ...menu } = await this.prisma.menu.findUniqueOrThrow({
-      where: {
-        id: menuId,
-        deletedAt: null
-      },
-      include: {
-        cylinders: {
-          include: {
-            menuCategories: {
-              include: {
-                items: {
-                  orderBy: {
-                    positionInMenuCategory: 'asc'
+    const { cylinders, ...menu } = await this.prisma.menu
+      .findUniqueOrThrow({
+        where: {
+          id: menuId,
+          deletedAt: null,
+        },
+        include: {
+          cylinders: {
+            include: {
+              menuCategories: {
+                include: {
+                  items: {
+                    orderBy: {
+                      positionInMenuCategory: 'asc',
+                    },
+                    where: {
+                      isActive: true,
+                    },
                   },
-                  where: {
-                    isActive: true
-                  }
+                  category: {
+                    include: {
+                      categoryName: true,
+                    },
+                  },
                 },
-                category: {
-                  include: {
-                    categoryName: true
-                  },
-                }
+                orderBy: {
+                  positionInCylinder: 'asc',
+                },
               },
-              orderBy: {
-                positionInCylinder: 'asc'
-              }
-            }
+            },
+            orderBy: {
+              positionInMenu: 'asc',
+            },
           },
-          orderBy: {
-            positionInMenu: 'asc'
-          }
-        }
-      }
-    }).catch((error: Error) => {
-      if (isRecordNotFound(error))
-        throw new MenuNotFound();
-      throw error;
-    });
+        },
+      })
+      .catch((error: Error) => {
+        if (isRecordNotFound(error)) throw new MenuNotFound();
+        throw error;
+      });
 
     const previewByDay = Object.values(Days).reduce((acc, day) => {
       acc[day] = [];
       const categoryMap = new Map<string, MenuCategoryCompleteOut>();
 
-       cylinders
-        .filter(cylinder => cylinder[day])
-        .forEach(cylinder =>
-          cylinder.menuCategories.forEach(mc => {
+      cylinders
+        .filter((cylinder) => cylinder[day])
+        .forEach((cylinder) =>
+          cylinder.menuCategories.forEach((mc) => {
             const categoryId = mc.categoryId!;
 
             if (!categoryMap.has(categoryId)) {
@@ -658,11 +756,10 @@ export class MenuService {
           })
         );
 
-      acc[day] = Array.from(categoryMap.values()).map(cat => ({
+      acc[day] = Array.from(categoryMap.values()).map((cat) => ({
         ...cat,
         items: cat.items?.sort(
-          (a, b) =>
-            (a.positionInMenuCategory ?? 0) - (b.positionInMenuCategory ?? 0)
+          (a, b) => (a.positionInMenuCategory ?? 0) - (b.positionInMenuCategory ?? 0)
         ),
       }));
       return acc;
@@ -670,98 +767,104 @@ export class MenuService {
 
     return {
       ...menu,
-      favicon: await S3Service.generateGetPresignedUrl(menu.favicon),
-      ...previewByDay
+      favicon: await this.s3.generateGetPresignedUrl(menu.favicon),
+      ...previewByDay,
     };
   }
 
   async getMenuView(menuId: UUID): Promise<MenuViewCompleteOut | never> {
     const currentDay = Object.values(Days)[new Date().getDay()];
 
-    const { cylinders, ...menu } = await this.prisma.menu.findUniqueOrThrow({
-      where: {
-        id: menuId,
-        deletedAt: null
-      },
-      include: {
-        branch: {
-          include: {
-            address: true,
-            openingTimes: true
-          }
+    const { cylinders, ...menu } = await this.prisma.menu
+      .findUniqueOrThrow({
+        where: {
+          id: menuId,
+          deletedAt: null,
         },
-        cylinders: {
-          where: {
-            [currentDay]: true
+        include: {
+          branch: {
+            include: {
+              address: true,
+              openingTimes: true,
+            },
           },
-          include: {
-            menuCategories: {
-              include: {
-                items: {
-                  orderBy: {
-                    positionInMenuCategory: 'asc'
+          cylinders: {
+            where: {
+              [currentDay]: true,
+            },
+            include: {
+              menuCategories: {
+                include: {
+                  items: {
+                    orderBy: {
+                      positionInMenuCategory: 'asc',
+                    },
+                    where: {
+                      isActive: true,
+                    },
                   },
-                  where: {
-                    isActive: true
-                  }
+                  category: {
+                    include: {
+                      categoryName: true,
+                    },
+                  },
                 },
-                category: {
-                  include: {
-                    categoryName: true
-                  }
-                }
+                orderBy: {
+                  positionInCylinder: 'asc',
+                },
               },
-              orderBy: {
-                positionInCylinder: 'asc'
-              }
-            }
+            },
+            orderBy: {
+              positionInMenu: 'asc',
+            },
           },
-          orderBy: {
-            positionInMenu: 'asc'
-          }
-        }
-      }
-    }).catch((error: Error) => {
-      if (isRecordNotFound(error))
-        throw new MenuNotFound();
-      throw error;
-    });
+        },
+      })
+      .catch((error: Error) => {
+        if (isRecordNotFound(error)) throw new MenuNotFound();
+        throw error;
+      });
 
     const categoryMap = new Map<string, MenuCategoryCompleteOut>();
-    cylinders
-      .forEach(cylinder =>
-        cylinder.menuCategories.forEach(mc => {
-            const categoryId = mc.categoryId!;
+    cylinders.forEach((cylinder) =>
+      cylinder.menuCategories.forEach((mc) => {
+        const categoryId = mc.categoryId!;
 
-            if (!categoryMap.has(categoryId)) {
-              categoryMap.set(categoryId, {
-                ...mc,
-                ...mc.category,
-                categoryId,
-                categoryName: mc.category?.categoryName?.name ?? null,
-                items: [...(mc.items ?? [])],
-              });
-            } else {
-              const existing = categoryMap.get(categoryId);
-              existing?.items?.push(...(mc.items ?? []));
-            }
-      }));
+        if (!categoryMap.has(categoryId)) {
+          categoryMap.set(categoryId, {
+            ...mc,
+            ...mc.category,
+            categoryId,
+            categoryName: mc.category?.categoryName?.name ?? null,
+            items: [...(mc.items ?? [])],
+          });
+        } else {
+          const existing = categoryMap.get(categoryId);
+          existing?.items?.push(...(mc.items ?? []));
+        }
+      })
+    );
 
-    const dayMenu = Array.from(categoryMap.values()).map(cat => ({
-        ...cat,
-        items: cat.items?.sort(
-          (a, b) =>
-            (a.positionInMenuCategory ?? 0) - (b.positionInMenuCategory ?? 0)
-        ),
+    const dayMenu = Array.from(categoryMap.values()).map((cat) => ({
+      ...cat,
+      items: cat.items?.sort(
+        (a, b) => (a.positionInMenuCategory ?? 0) - (b.positionInMenuCategory ?? 0)
+      ),
     }));
 
     return {
       ...menu,
-      favicon: await S3Service.generateGetPresignedUrl(menu.favicon),
+      favicon: await this.s3.generateGetPresignedUrl(menu.favicon),
       currentDay,
-      menuCategories: dayMenu
+      menuCategories: dayMenu,
     };
   }
 }
 
-export default new MenuService();
+let shared: MenuService | undefined;
+
+/** Lazy singleton accessor — no Prisma/S3 work happens on import. */
+export function getMenuService(): MenuService {
+  if (!shared) shared = new MenuService();
+  return shared;
+}

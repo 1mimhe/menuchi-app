@@ -14,121 +14,142 @@ import {
   ItemNotFound,
 } from '../exceptions/NotFoundError';
 import { BacklogCompleteOut } from '../types/RestaurantTypes';
-import S3Service from './S3Service';
 import MenuchiError from '../exceptions/MenuchiError';
-import { CategoryCompactOut, CategoryCompleteOut, CategoryNameCompleteOut, CreateCategoryCompactIn } from '../types/CategoryTypes';
+import {
+  CategoryCompactOut,
+  CategoryCompleteOut,
+  CategoryNameCompleteOut,
+  CreateCategoryCompactIn,
+} from '../types/CategoryTypes';
 import { isForeignKeyViolation, isRecordNotFound } from '../utils/prismaErrors';
 import { withUniqueRetry } from '../utils/positionRetry';
+import { getS3Service, PresignedUrlGenerator } from './S3Service';
 
 export class BacklogService {
-  constructor(private prisma: PrismaClient = prismaClient) {}
+  private s3: PresignedUrlGenerator;
+
+  constructor(
+    private prisma: PrismaClient = prismaClient,
+    s3?: PresignedUrlGenerator
+  ) {
+    // Lazy default keeps `new BacklogService(mockPrisma)` working in tests
+    // without creating an S3 client on import.
+    this.s3 = s3 ?? getS3Service();
+  }
 
   async createItem(
     backlogId: UUID,
     { categoryNameId, name, ingredients, price, picKey }: ItemCompactIn
   ): Promise<CreateItemCompleteOut | never> {
     // Retry wrapper: concurrent creates can read the same max position.
-    return withUniqueRetry(() => this.prisma.$transaction(async (tx) => {
-      const maxCategoryPosition = await tx.category.aggregate({
-        _max: {
-          positionInBacklog: true,
-        },
-        where: {
-          backlogId,
-        },
-      });
-
-      const positionInBacklog =
-        (maxCategoryPosition._max.positionInBacklog ?? 0) + 1;
-
-      const category = await tx.category
-        .upsert({
+    return withUniqueRetry(() =>
+      this.prisma.$transaction(async (tx) => {
+        const maxCategoryPosition = await tx.category.aggregate({
+          _max: {
+            positionInBacklog: true,
+          },
           where: {
-            backlogId_categoryNameId: {
+            backlogId,
+          },
+        });
+
+        const positionInBacklog = (maxCategoryPosition._max.positionInBacklog ?? 0) + 1;
+
+        const category = await tx.category
+          .upsert({
+            where: {
+              backlogId_categoryNameId: {
+                backlogId: backlogId,
+                categoryNameId: categoryNameId,
+              },
+            },
+            update: {},
+            create: {
               backlogId: backlogId,
               categoryNameId: categoryNameId,
+              positionInBacklog,
             },
+            include: {
+              categoryName: true,
+            },
+          })
+          .catch((error: Error) => {
+            if (isForeignKeyViolation(error, 'categories_backlog_id_fkey'))
+              throw new BacklogNotFound();
+            if (isForeignKeyViolation(error, 'categories_category_name_id_fkey'))
+              throw new CategoryNameNotFound();
+            throw error;
+          });
+
+        const maxItemPositions = await tx.item.aggregate({
+          _max: {
+            positionInItemsList: true,
+            positionInCategory: true,
           },
-          update: {},
-          create: {
-            backlogId: backlogId,
-            categoryNameId: categoryNameId,
-            positionInBacklog,
+          where: {
+            categoryId: category.id,
           },
-          include: {
-            categoryName: true,
-          },
-        })
-        .catch((error: Error) => {
-          if (isForeignKeyViolation(error, 'categories_backlog_id_fkey'))
-            throw new BacklogNotFound();
-          if (
-            isForeignKeyViolation(error, 'categories_category_name_id_fkey')
-          )
-            throw new CategoryNameNotFound();
-          throw error;
         });
-      
-      const maxItemPositions = await tx.item.aggregate({
-        _max: {
-          positionInItemsList: true,
-          positionInCategory: true,
-        },
-        where: {
-          categoryId: category.id,
-        },
-      });
 
-      const positionInItemsList =
-        (maxItemPositions._max.positionInItemsList ?? 0) + 1;
-      const positionInCategory =
-        (maxItemPositions._max.positionInCategory ?? 0) + 1;
+        const positionInItemsList = (maxItemPositions._max.positionInItemsList ?? 0) + 1;
+        const positionInCategory = (maxItemPositions._max.positionInCategory ?? 0) + 1;
 
-      if (!picKey) {
-        picKey = process.env.S3_DEFAULT_KEY;
-      }
+        if (!picKey) {
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            const { getEnv } = require('../config/env') as typeof import('../config/env');
+            picKey = getEnv().S3_DEFAULT_KEY;
+          } catch {
+            picKey = undefined;
+          }
+        }
 
-      const item = await tx.item.create({
-        data: {
-          categoryId: category.id,
-          name,
-          ingredients,
-          price,
-          picKey,
-          positionInItemsList,
-          positionInCategory,
-        },
-      });
+        const item = await tx.item.create({
+          data: {
+            categoryId: category.id,
+            name,
+            ingredients,
+            price,
+            picKey,
+            positionInItemsList,
+            positionInCategory,
+          },
+        });
 
-      return {
-        ...item,
-        categoryName: category.categoryName?.name,
-      };
-    }));
+        return {
+          ...item,
+          categoryName: category.categoryName?.name,
+        };
+      })
+    );
   }
 
   async getItem(id: UUID): Promise<ItemCompleteOut | never> {
-    return this.prisma.item.findUniqueOrThrow({
-      where: {
-        id,
-        deletedAt: null
-      }
-    }).catch((error: Error) => {
-      if (isRecordNotFound(error)) throw new ItemNotFound();
-      throw error;
-    });
+    return this.prisma.item
+      .findUniqueOrThrow({
+        where: {
+          id,
+          deletedAt: null,
+        },
+      })
+      .catch((error: Error) => {
+        if (isRecordNotFound(error)) throw new ItemNotFound();
+        throw error;
+      });
   }
 
   async getCategory(id: UUID): Promise<CategoryCompleteOut | never> {
-    return this.prisma.category.findUniqueOrThrow({
-      where: {
-        id,
-        deletedAt: null
-      }
-    }).catch((error: Error) => {
-      if (isRecordNotFound(error)) throw new CategoryNotFound();
-      throw error;
-    });;
+    return this.prisma.category
+      .findUniqueOrThrow({
+        where: {
+          id,
+          deletedAt: null,
+        },
+      })
+      .catch((error: Error) => {
+        if (isRecordNotFound(error)) throw new CategoryNotFound();
+        throw error;
+      });
   }
 
   async getBacklog(backlogId: UUID): Promise<BacklogCompleteOut | never> {
@@ -149,16 +170,16 @@ export class BacklogService {
                   deletedAt: null,
                 },
                 orderBy: {
-                  positionInCategory: 'asc'
-                }
+                  positionInCategory: 'asc',
+                },
               },
             },
             omit: {
               categoryNameId: true,
             },
             orderBy: {
-              positionInBacklog: 'asc'
-            }
+              positionInBacklog: 'asc',
+            },
           },
         },
       })
@@ -178,7 +199,7 @@ export class BacklogService {
             category.items.map(async (item) => ({
               ...item,
               categoryName: category.categoryName?.name ?? null,
-              picUrl: await S3Service.generateGetPresignedUrl(item.picKey),
+              picUrl: await this.s3.generateGetPresignedUrl(item.picKey),
               picKey: undefined,
             }))
           ),
@@ -216,24 +237,22 @@ export class BacklogService {
         categoryNameId: item.category?.categoryName?.id,
         categoryName: item.category?.categoryName?.name,
         category: undefined,
-        picUrl: await S3Service.generateGetPresignedUrl(item.picKey),
+        picUrl: await this.s3.generateGetPresignedUrl(item.picKey),
         picKey: undefined,
       }))
     );
   }
 
   async updateItem(backlogId: UUID, itemId: UUID, itemDTO: UpdateItemIn) {
-    itemDTO = Object.fromEntries(
-      Object.entries(itemDTO).filter(([key, value]) => value !== null)
-    );
+    itemDTO = Object.fromEntries(Object.entries(itemDTO).filter(([, value]) => value !== null));
     return this.prisma.item.update({
       where: {
         id: itemId,
         category: {
           backlog: {
-            id: backlogId
-          }
-        }
+            id: backlogId,
+          },
+        },
       },
       data: itemDTO,
     });
@@ -247,8 +266,8 @@ export class BacklogService {
         },
         category: {
           backlog: {
-            id: backlogId
-          }
+            id: backlogId,
+          },
         },
         deletedAt: null,
       },
@@ -263,71 +282,102 @@ export class BacklogService {
     { categoryNameId }: CreateCategoryCompactIn
   ): Promise<CategoryCompactOut | never> {
     // Retry wrapper: concurrent creates can read the same max position.
-    return withUniqueRetry(() => this.prisma.$transaction(async (tx) => {
-      const maxCategoryPosition = await tx.category.aggregate({
-        _max: {
-          positionInBacklog: true,
-        },
-        where: {
-          backlogId,
-        },
-      });
+    return withUniqueRetry(() =>
+      this.prisma.$transaction(async (tx) => {
+        const maxCategoryPosition = await tx.category.aggregate({
+          _max: {
+            positionInBacklog: true,
+          },
+          where: {
+            backlogId,
+          },
+        });
 
-      const positionInBacklog =
-        (maxCategoryPosition._max.positionInBacklog ?? 0) + 1;
+        const positionInBacklog = (maxCategoryPosition._max.positionInBacklog ?? 0) + 1;
 
-      return tx.category.create({
-        data: {
-          backlogId,
-          categoryNameId,
-          positionInBacklog
-        }
-      });
-    }));
+        return tx.category.create({
+          data: {
+            backlogId,
+            categoryNameId,
+            positionInBacklog,
+          },
+        });
+      })
+    );
   }
 
   async reorderItemsInCategory(backlogId: UUID, itemsId: UUID[]) {
     await this.isValidItemsId(backlogId, itemsId);
-    return this.prisma.$executeRaw`
-      UPDATE "items"
-      SET "position_in_category" = CASE "id"
-        ${Prisma.join(itemsId.map((itemId, index) => Prisma.sql`WHEN ${itemId}::uuid THEN ${index + 1}`), ' ')}
-      ELSE "position_in_category"
-      END
-      WHERE "id" IN (${Prisma.join(itemsId.map(id => Prisma.sql`${id}::uuid`))})
-    `;
+    // Two-step swap: the @@unique (category_id, position) guard is checked
+    // per-row, so a single CASE swap (1->3 while 3 still exists) raises
+    // P2003/23505 mid-update. Bumping targets out of range first keeps every
+    // intermediate state unique. Same pattern in all reorder* methods.
+    const OFFSET = 1000000;
+    const ids = Prisma.join(itemsId.map((id) => Prisma.sql`${id}::uuid`));
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        UPDATE "items" SET "position_in_category" = "position_in_category" + ${OFFSET}
+        WHERE "id" IN (${ids})
+      `;
+      return tx.$executeRaw`
+        UPDATE "items"
+        SET "position_in_category" = CASE "id"
+          ${Prisma.join(
+            itemsId.map((itemId, index) => Prisma.sql`WHEN ${itemId}::uuid THEN ${index + 1}`),
+            ' '
+          )}
+        ELSE "position_in_category"
+        END
+        WHERE "id" IN (${ids})
+      `;
+    });
   }
 
   async reorderItemsInList(backlogId: UUID, itemsId: UUID[]) {
     await this.isValidItemsId(backlogId, itemsId, false);
-    return this.prisma.$executeRaw`
-      UPDATE "items"
-      SET "position_in_items_list" = CASE "id"
-        ${Prisma.join(itemsId.map((itemId, index) => Prisma.sql`WHEN ${itemId}::uuid THEN ${index + 1}`), ' ')}
-      ELSE "position_in_items_list"
-      END
-      WHERE "id" IN (${Prisma.join(itemsId.map(id => Prisma.sql`${id}::uuid`))})
-    `;
+    const OFFSET = 1000000;
+    const ids = Prisma.join(itemsId.map((id) => Prisma.sql`${id}::uuid`));
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        UPDATE "items" SET "position_in_items_list" = "position_in_items_list" + ${OFFSET}
+        WHERE "id" IN (${ids})
+      `;
+      return tx.$executeRaw`
+        UPDATE "items"
+        SET "position_in_items_list" = CASE "id"
+          ${Prisma.join(
+            itemsId.map((itemId, index) => Prisma.sql`WHEN ${itemId}::uuid THEN ${index + 1}`),
+            ' '
+          )}
+        ELSE "position_in_items_list"
+        END
+        WHERE "id" IN (${ids})
+      `;
+    });
   }
 
-  private async isValidItemsId(backlogId: UUID, itemsId: UUID[], areSameCategory = true): Promise<void | never> {
+  private async isValidItemsId(
+    backlogId: UUID,
+    itemsId: UUID[],
+    areSameCategory = true
+  ): Promise<void | never> {
     const items = await this.prisma.item.findMany({
-        where: {
-          id: {
-            in: itemsId
-          },
+      where: {
+        id: {
+          in: itemsId,
+        },
+        deletedAt: null,
+        category: {
           deletedAt: null,
-          category: {
-            deletedAt: null,
-            backlog: {
-              id: backlogId,
-            },
+          backlog: {
+            id: backlogId,
           },
         },
-        select: {
-          id: true,
-          categoryId: true,
-        },
+      },
+      select: {
+        id: true,
+        categoryId: true,
+      },
     });
 
     if (items.length !== itemsId.length) {
@@ -335,7 +385,7 @@ export class BacklogService {
     }
 
     if (areSameCategory) {
-      const categoryIds = new Set(items.map(item => item.categoryId));
+      const categoryIds = new Set(items.map((item) => item.categoryId));
       if (categoryIds.size > 1)
         throw new MenuchiError('All item IDs must belong to the same category.', 400);
     }
@@ -343,14 +393,27 @@ export class BacklogService {
 
   async reorderCategoriesInBacklog(backlogId: UUID, categoriesId: UUID[]) {
     await this.isValidCategoriesId(backlogId, categoriesId);
-    return this.prisma.$executeRaw`
-      UPDATE "categories"
-      SET "position_in_backlog" = CASE "id"
-        ${Prisma.join(categoriesId.map((categoryId, index) => Prisma.sql`WHEN ${categoryId}::uuid THEN ${index + 1}`), ' ')}
-      ELSE "position_in_backlog"
-      END
-      WHERE "id" IN (${Prisma.join(categoriesId.map(id => Prisma.sql`${id}::uuid`))})
-    `;
+    const OFFSET = 1000000;
+    const ids = Prisma.join(categoriesId.map((id) => Prisma.sql`${id}::uuid`));
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        UPDATE "categories" SET "position_in_backlog" = "position_in_backlog" + ${OFFSET}
+        WHERE "id" IN (${ids})
+      `;
+      return tx.$executeRaw`
+        UPDATE "categories"
+        SET "position_in_backlog" = CASE "id"
+          ${Prisma.join(
+            categoriesId.map(
+              (categoryId, index) => Prisma.sql`WHEN ${categoryId}::uuid THEN ${index + 1}`
+            ),
+            ' '
+          )}
+        ELSE "position_in_backlog"
+        END
+        WHERE "id" IN (${ids})
+      `;
+    });
   }
 
   async deleteCategory(backlogId: UUID, categoryId: UUID) {
@@ -359,12 +422,12 @@ export class BacklogService {
         where: {
           id: categoryId,
           backlog: {
-            id: backlogId
-          }
+            id: backlogId,
+          },
         },
         data: {
-          deletedAt: new Date()
-        }
+          deletedAt: new Date(),
+        },
       });
 
       await tx.item.updateMany({
@@ -372,13 +435,13 @@ export class BacklogService {
           categoryId,
           category: {
             backlog: {
-              id: backlogId
-            }
-          }
+              id: backlogId,
+            },
+          },
         },
         data: {
-          deletedAt: new Date()
-        }
+          deletedAt: new Date(),
+        },
       });
     });
   }
@@ -387,12 +450,13 @@ export class BacklogService {
     const categories = await this.prisma.category.findMany({
       where: {
         deletedAt: null,
-        backlogId
-      }
+        backlogId,
+      },
     });
 
-    const isValidQuery = (categories.length === categoriesId.length) &&
-            categories.every(category => categoriesId.some(categoryId => categoryId === category.id ));
+    const isValidQuery =
+      categories.length === categoriesId.length &&
+      categories.every((category) => categoriesId.some((categoryId) => categoryId === category.id));
     if (!isValidQuery) throw new MenuchiError('All category IDs must be in the request.', 400);
   }
 
@@ -401,25 +465,31 @@ export class BacklogService {
       where: {
         categories: {
           some: {
-            backlogId
-          }
-        }
+            backlogId,
+          },
+        },
       },
       include: {
         categories: {
           where: {
-            backlogId
-          }
-        }
-      }
+            backlogId,
+          },
+        },
+      },
     });
 
-    return categoryNames.map(cn => ({
+    return categoryNames.map((cn) => ({
       ...cn,
       categoryId: cn.categories[0].id,
-      categories: undefined
+      categories: undefined,
     }));
   }
 }
 
-export default new BacklogService();
+let shared: BacklogService | undefined;
+
+/** Lazy singleton accessor — no Prisma/S3 work happens on import. */
+export function getBacklogService(): BacklogService {
+  if (!shared) shared = new BacklogService();
+  return shared;
+}
