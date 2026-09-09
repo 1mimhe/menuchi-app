@@ -5,9 +5,11 @@ import { CategoryNameCompactIn, CategoryNameCompleteOut } from '../types/Categor
 export class CategoryNameService {
   constructor(private prisma: PrismaClient = prismaClient) {}
 
-  async createCategoryName(categoryNameDTO: CategoryNameCompactIn): Promise<CategoryNameCompleteOut | never> {
+  async createCategoryName(
+    categoryNameDTO: CategoryNameCompactIn
+  ): Promise<CategoryNameCompleteOut | never> {
     return this.prisma.categoryName.create({
-      data: categoryNameDTO
+      data: categoryNameDTO,
     });
   }
 
@@ -16,4 +18,10 @@ export class CategoryNameService {
   }
 }
 
-export default new CategoryNameService();
+let shared: CategoryNameService | undefined;
+
+/** Lazy singleton accessor — no Prisma work happens on import. */
+export function getCategoryNameService(): CategoryNameService {
+  if (!shared) shared = new CategoryNameService();
+  return shared;
+}

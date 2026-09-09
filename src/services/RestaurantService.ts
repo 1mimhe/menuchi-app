@@ -9,12 +9,19 @@ import {
 import { UUID } from '../types/TypeAliases';
 import { RestaurantNotFound } from '../exceptions/NotFoundError';
 import { isRecordNotFound } from '../utils/prismaErrors';
-import S3Service from './S3Service';
+import { getS3Service, PresignedUrlGenerator } from './S3Service';
 
 export class RestaurantService {
-  constructor(private prisma: PrismaClient = prismaClient) {}
+  private s3: PresignedUrlGenerator;
 
- async createRestaurant(
+  constructor(
+    private prisma: PrismaClient = prismaClient,
+    s3?: PresignedUrlGenerator
+  ) {
+    this.s3 = s3 ?? getS3Service();
+  }
+
+  async createRestaurant(
     restaurantDTO: RestaurantCompactIn,
     managerId?: UUID
   ): Promise<CreateRestaurantCompleteOut | never> {
@@ -36,7 +43,7 @@ export class RestaurantService {
           include: {
             backlog: true,
             address: true,
-            openingTimes: true
+            openingTimes: true,
           },
         },
       },
@@ -54,7 +61,7 @@ export class RestaurantService {
             include: {
               backlog: true,
               address: true,
-              openingTimes: true
+              openingTimes: true,
             },
           },
         },
@@ -66,21 +73,26 @@ export class RestaurantService {
 
     return {
       ...restaurant,
-      avatarUrl: await S3Service.generateGetPresignedUrl(avatarKey) ?? null,
-      coverUrl: await S3Service.generateGetPresignedUrl(coverKey) ?? null,
-      logoUrl: await S3Service.generateGetPresignedUrl(logoKey) ?? null
+      avatarUrl: (await this.s3.generateGetPresignedUrl(avatarKey)) ?? null,
+      coverUrl: (await this.s3.generateGetPresignedUrl(coverKey)) ?? null,
+      logoUrl: (await this.s3.generateGetPresignedUrl(logoKey)) ?? null,
     };
   }
 
-  
   async updateRestaurant(restaurantId: UUID, restaurantDTO: UpdateRestaurantCompactIn) {
     return this.prisma.restaurant.update({
       where: {
-        id: restaurantId
+        id: restaurantId,
       },
-      data: restaurantDTO
+      data: restaurantDTO,
     });
   }
 }
 
-export default new RestaurantService();
+let shared: RestaurantService | undefined;
+
+/** Lazy singleton accessor — no Prisma/S3 work happens on import. */
+export function getRestaurantService(): RestaurantService {
+  if (!shared) shared = new RestaurantService();
+  return shared;
+}
